@@ -11,11 +11,34 @@
 	"repo": "https://github.com/swissky/emdash-plugin-linguadash",
 
 	// Trust contract — what runtime APIs the plugin asks for.
-	// Empty arrays mean no extra privileges beyond logging,
-	// KV, and route/hook registration. Changing these between
-	// releases requires a version bump because installed
-	// users have consented to the old contract.
-	"capabilities": [],
+	// Changing these between releases requires a version bump because
+	// installed users have consented to the old contract.
+	"capabilities": ["content:write", "content:revisions:read", "schema:read"],
 	"allowedHosts": [],
-	"storage": {}
+	"storage": {
+		"status": { "indexes": ["collection", "targetLocale", "state"] }
+	},
+
+	"admin": {
+		"settingsSchema": {
+			"sourceLocale": {
+				"type": "string",
+				"label": "Source language",
+				"description": "Locale code translations are made from, e.g. de. Leave empty to use the site's default locale."
+			},
+			"targetLocales": {
+				"type": "string",
+				"label": "Target languages",
+				"description": "Comma-separated locale codes to translate into, e.g. fr, it, en."
+			}
+		},
+		"editorPanels": [
+			{
+				"id": "translations",
+				"title": "Translations",
+				"route": "editor/panel",
+				"collections": ["posts", "pages"]
+			}
+		]
+	}
 }
