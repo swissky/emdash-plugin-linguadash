@@ -1,0 +1,21 @@
+{
+	"$schema": "./node_modules/@emdash-cms/plugin-cli/schemas/emdash-plugin.schema.json",
+
+	"slug": "linguadash",
+	"publisher": "did:plc:3bsmtjuqmxef56ezy4m52azr",
+
+	"license": "MIT",
+	"author": { "name": "swissky", "url": "https://github.com/swissky" },
+	"security": { "url": "https://github.com/swissky/emdash-plugin-linguadash/security/advisories/new" },
+	"description": "Multilingual content for EmDash: translate posts, pages and taxonomies manually or automatically with DeepL or GPT, and track translation status.",
+	"repo": "https://github.com/swissky/emdash-plugin-linguadash",
+
+	// Trust contract — what runtime APIs the plugin asks for.
+	// Empty arrays mean no extra privileges beyond logging,
+	// KV, and route/hook registration. Changing these between
+	// releases requires a version bump because installed
+	// users have consented to the old contract.
+	"capabilities": [],
+	"allowedHosts": [],
+	"storage": {}
+}
