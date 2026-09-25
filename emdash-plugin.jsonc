@@ -16,10 +16,11 @@
 	"capabilities": ["content:write", "content:revisions:read", "schema:read"],
 	"allowedHosts": [],
 	"storage": {
-		"status": { "indexes": ["collection", "targetLocale", "state"] }
+		"status": { "indexes": ["collection", "targetLocale", "state", "sourceId", "outdated", ["state", "outdated"]] }
 	},
 
 	"admin": {
+		"pages": [{ "path": "/translations", "label": "Translations" }],
 		"settingsSchema": {
 			"sourceLocale": {
 				"type": "string",

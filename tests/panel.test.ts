@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { BlockResponse } from "@emdash-cms/blocks";
 import { createPluginRuntimeTestHost, type PluginRuntimeTestHost } from "@emdash-cms/plugin-test";
 
+import { statusId, type TranslationStatus } from "../src/panel.js";
+
 let host: PluginRuntimeTestHost;
 
 function lines(response: BlockResponse): string[] {
@@ -15,6 +17,19 @@ function buttons(response: BlockResponse): string[] {
 			? block.elements.flatMap((el) => (el.type === "button" ? [`${el.action_id}:${String(el.value)}`] : []))
 			: [],
 	);
+}
+
+function storedStatus(entryId: string) {
+	return host.inspect.storage.get<TranslationStatus>("status", statusId("posts", entryId));
+}
+
+/** Save hooks run after the response, so poll for their effect. */
+async function until(check: () => Promise<boolean>) {
+	for (let attempt = 0; attempt < 50; attempt++) {
+		if (await check()) return;
+		await new Promise((resolve) => setTimeout(resolve, 20));
+	}
+	throw new Error("condition not reached");
 }
 
 beforeEach(async () => {
@@ -88,6 +103,45 @@ describe("translations panel", () => {
 		const afterEdit = await host.admin.loadEditorPanel("translations", "posts", fr.id);
 		expect(lines(afterEdit)).toContain("FR (this entry) — draft · Outdated: source changed");
 		expect(buttons(afterEdit)).toContain("mark-translated:fr");
+	});
+
+	it("flags a translation as outdated when the source changes and clears it when the source is reverted", async () => {
+		const source = await host.fixtures.content("posts", {
+			slug: "hallo-welt",
+			locale: "de",
+			data: { title: "Hallo Welt", rating: 4 },
+		});
+		await host.admin.actEditorPanel("translations", "posts", source.id, "create", { value: "fr" });
+		const fr = (await host.inspect.content.list("posts")).find((row) => row.locale === "fr")!;
+		await host.admin.actEditorPanel("translations", "posts", fr.id, "mark-translated", { value: "fr" });
+		const outdated = () => storedStatus(fr.id).then((status) => status?.outdated);
+
+		await host.actions.content.update("posts", source.id, { data: { title: "Hallo neue Welt" } });
+		await until(async () => (await outdated()) === true);
+		expect(lines(await host.admin.loadPage("/translations"))).toEqual(["Hallo Welt — posts · FR"]);
+
+		await host.actions.content.update("posts", source.id, { data: { title: "Hallo Welt" } });
+		await until(async () => (await outdated()) === false);
+		expect(lines(await host.admin.loadPage("/translations"))).toEqual([]);
+	});
+
+	it("lists untranslated copies on the overview under their latest title", async () => {
+		const source = await host.fixtures.content("posts", { slug: "hallo", locale: "de", data: { title: "Hallo" } });
+		await host.admin.actEditorPanel("translations", "posts", source.id, "create", { value: "fr" });
+		const fr = (await host.inspect.content.list("posts")).find((row) => row.locale === "fr")!;
+
+		await host.actions.content.update("posts", fr.id, { data: { title: "Bonjour" } });
+		await until(async () => (await storedStatus(fr.id))?.title === "Bonjour");
+
+		const page = await host.admin.loadPage("/translations");
+		expect(page.blocks.find((block) => block.type === "stats")).toMatchObject({
+			items: [{ value: 0 }, { value: 1 }, { value: 0 }],
+		});
+		expect(lines(page)).toEqual(["Bonjour — posts · FR"]);
+
+		await host.actions.content.trash("posts", fr.id);
+		await until(async () => (await storedStatus(fr.id)) === null);
+		expect(lines(await host.admin.loadPage("/translations"))).toEqual([]);
 	});
 
 	it("ignores a create request for a language that is not configured", async () => {

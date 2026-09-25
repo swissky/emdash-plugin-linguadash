@@ -2,6 +2,17 @@
 
 A sandboxed plugin for [EmDash CMS](https://emdashcms.com).
 
+## Translation status
+
+The **Translations** panel in the post and page editor lists every configured language. From
+there editors create a translation (a draft copy of the source's translatable fields) and mark it
+as translated once the text is done.
+
+Each translation records a fingerprint of the source's translatable fields. When the source is
+saved with different values, its translations are flagged **Outdated**; reverting the source
+clears the flag. The **Translations** admin page counts outdated, untranslated and up-to-date
+entries and links to the ones that need work.
+
 ## Public-site components
 
 Sandboxed plugins cannot add markup to public pages, so the package ships two Astro

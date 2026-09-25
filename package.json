@@ -47,10 +47,10 @@
 		}
 	},
 	"devDependencies": {
-		"@emdash-cms/blocks": "0.39.1",
+		"@emdash-cms/blocks": "0.40.0",
 		"@emdash-cms/plugin-cli": "0.12.0",
-		"@emdash-cms/plugin-test": "^0.2.1",
-		"emdash": "0.39.1",
+		"@emdash-cms/plugin-test": "^0.2.2",
+		"emdash": "0.40.0",
 		"typescript": "^5.9.0",
 		"vitest": "^4.1.0"
 	}

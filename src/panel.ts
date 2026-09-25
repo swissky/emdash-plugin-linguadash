@@ -16,6 +16,10 @@ export interface TranslationStatus {
 	state: "copied" | "translated";
 	/** Fingerprint of the source's translatable fields when the state was recorded. */
 	sourceHash: string;
+	/** Set by the save hook when the source's translatable fields no longer match `sourceHash`. */
+	outdated: boolean;
+	/** Target entry title as last saved, for listings that cannot load every entry. */
+	title: string;
 	updatedAt: string;
 }
 
@@ -34,7 +38,19 @@ export function parseLocales(value: unknown): string[] {
 	return [...new Set(locales)];
 }
 
-async function fingerprint(fields: readonly string[], data: Record<string, unknown>) {
+export function entryTitle(data: Record<string, unknown>, fallback: string): string {
+	return typeof data.title === "string" && data.title.trim() ? data.title.trim() : fallback;
+}
+
+export async function resolveSourceLocale(ctx: PluginContext): Promise<string> {
+	return parseLocales(await ctx.settings.get<string>("sourceLocale"))[0] ?? ctx.site.locale;
+}
+
+export function translatableFields(schema: { fields: { slug: string; translatable?: boolean }[] } | null | undefined) {
+	return (schema?.fields ?? []).filter((f) => f.translatable).map((f) => f.slug);
+}
+
+export async function fingerprint(fields: readonly string[], data: Record<string, unknown>) {
 	const payload = JSON.stringify(fields.map((field) => [field, data[field] ?? null]));
 	const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(payload));
 	return [...new Uint8Array(digest).slice(0, 12)]
@@ -60,18 +76,17 @@ async function latest(content: WritableContent, collection: string, id: string) 
 
 async function loadState(ctx: PluginContext, entry: Entry) {
 	const content = writableContent(ctx);
-	const [sourceSetting, targetSetting, group, schema] = await Promise.all([
-		ctx.settings.get<string>("sourceLocale"),
+	const [sourceLocale, targetSetting, group, schema] = await Promise.all([
+		resolveSourceLocale(ctx),
 		ctx.settings.get<string>("targetLocales"),
 		content.getTranslations(entry.collection, entry.id),
 		ctx.schema?.getCollection(entry.collection),
 	]);
-	const sourceLocale = parseLocales(sourceSetting)[0] ?? ctx.site.locale;
 	const targetLocales = parseLocales(targetSetting).filter((locale) => locale !== sourceLocale);
 	const byLocale = new Map<string, TranslationSummary>();
 	for (const row of group.translations) if (row.locale) byLocale.set(row.locale, row);
 
-	const translatable = (schema?.fields ?? []).filter((f) => f.translatable).map((f) => f.slug);
+	const translatable = translatableFields(schema);
 	const sourceRow = byLocale.get(sourceLocale);
 	const source = sourceRow ? await latest(content, entry.collection, sourceRow.id) : null;
 	const sourceHash = source ? await fingerprint(translatable, source.data) : null;
@@ -161,6 +176,8 @@ async function createTranslation(ctx: PluginContext, state: State, entry: Entry,
 		sourceId: source.id,
 		state: "copied",
 		sourceHash: state.sourceHash!,
+		outdated: false,
+		title: entryTitle(created.data, created.slug ?? created.id),
 		updatedAt: new Date().toISOString(),
 	};
 	await ctx.storage.status!.put(statusId(entry.collection, created.id), status);
@@ -168,6 +185,7 @@ async function createTranslation(ctx: PluginContext, state: State, entry: Entry,
 
 async function markTranslated(ctx: PluginContext, state: State, entry: Entry, locale: string) {
 	const row = state.byLocale.get(locale)!;
+	const previous = state.statuses.get(statusId(entry.collection, row.id));
 	const status: TranslationStatus = {
 		collection: entry.collection,
 		targetId: row.id,
@@ -175,6 +193,8 @@ async function markTranslated(ctx: PluginContext, state: State, entry: Entry, lo
 		sourceId: state.source!.id,
 		state: "translated",
 		sourceHash: state.sourceHash!,
+		outdated: false,
+		title: previous?.title ?? row.slug ?? row.id,
 		updatedAt: new Date().toISOString(),
 	};
 	await ctx.storage.status!.put(statusId(entry.collection, row.id), status);
