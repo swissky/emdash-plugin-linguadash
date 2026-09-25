@@ -5,12 +5,14 @@ import {
 	entryTitle,
 	fingerprint,
 	resolveSourceLocale,
+	resolveTargetLocales,
 	statusId,
 	translatableFields,
 	type TranslationStatus,
 } from "./panel.js";
 
 const LIST_LIMIT = 25;
+const SCAN_LIMIT = 100;
 
 type SavedEntry = { id?: unknown; slug?: unknown; locale?: unknown; data?: unknown };
 
@@ -39,7 +41,8 @@ export async function trackSave(event: ContentHookEvent, ctx: PluginContext): Pr
 	const key = statusId(event.collection, saved.id);
 	const status = (await statuses.get(key)) as TranslationStatus | null;
 	if (!status) return;
-	const title = entryTitle(data, typeof saved.slug === "string" ? saved.slug : saved.id);
+	const schema = await ctx.schema?.getCollection(event.collection);
+	const title = entryTitle(data, typeof saved.slug === "string" ? saved.slug : saved.id, schema?.titleField);
 	if (status.title !== title) await statuses.put(key, { ...status, title });
 }
 
@@ -47,13 +50,22 @@ export async function forgetDeleted(event: ContentDeleteEvent, ctx: PluginContex
 	await ctx.storage.status?.delete(statusId(event.collection, event.id));
 }
 
-function workList(heading: string, items: { data: TranslationStatus }[], hasMore: boolean): Block[] {
+interface WorkItem {
+	title: string;
+	collection: string;
+	id: string;
+	locale: string;
+	/** Locale codes shown after the collection, e.g. the target or the missing languages. */
+	locales: string[];
+}
+
+function workList(heading: string, items: WorkItem[], note?: string): Block[] {
 	if (items.length === 0) return [];
 	const blocks: Block[] = [{ type: "header", text: heading }];
-	for (const { data: status } of items) {
+	for (const item of items) {
 		blocks.push({
 			type: "section",
-			text: `${status.title} — ${status.collection} · ${status.targetLocale.toUpperCase()}`,
+			text: `${item.title} — ${item.collection} · ${item.locales.map((l) => l.toUpperCase()).join(", ")}`,
 		});
 		blocks.push({
 			type: "actions",
@@ -61,39 +73,110 @@ function workList(heading: string, items: { data: TranslationStatus }[], hasMore
 				{
 					type: "link",
 					label: "Open",
-					target: { kind: "content", collection: status.collection, id: status.targetId, locale: status.targetLocale },
+					target: { kind: "content", collection: item.collection, id: item.id, locale: item.locale },
 				},
 			],
 		});
 	}
-	if (hasMore) blocks.push({ type: "context", text: `Showing the first ${LIST_LIMIT}.` });
+	if (note) blocks.push({ type: "context", text: note });
 	return blocks;
+}
+
+function fromStatuses(page: { items: unknown[]; hasMore: boolean }) {
+	const items = (page.items as { data: TranslationStatus }[]).map(({ data: status }) => ({
+		title: status.title,
+		collection: status.collection,
+		id: status.targetId,
+		locale: status.targetLocale,
+		locales: [status.targetLocale],
+	}));
+	return { items, note: page.hasMore ? `Showing the first ${LIST_LIMIT}.` : undefined };
+}
+
+/**
+ * Source entries lacking a row in one or more target locales. Reads one page of
+ * `SCAN_LIMIT` rows per collection that has translatable fields, so on larger
+ * collections only part of the content is checked.
+ */
+async function findMissing(ctx: PluginContext, sourceLocale: string, targetLocales: string[]) {
+	const missing: WorkItem[] = [];
+	let partial = false;
+	if (targetLocales.length === 0 || !ctx.schema) return { missing, partial };
+	const collections = (await ctx.schema.listCollections()).filter((c) => c.fields.some((f) => f.translatable));
+	const pages = await Promise.all(collections.map((c) => ctx.content!.list(c.slug, { limit: SCAN_LIMIT })));
+	collections.forEach((collection, index) => {
+		const page = pages[index]!;
+		if (page.hasMore) partial = true;
+		const groups = new Map<string, { source?: (typeof page.items)[number]; locales: Set<string> }>();
+		for (const item of page.items) {
+			const key = item.translationGroup ?? item.id;
+			const group = groups.get(key) ?? { locales: new Set<string>() };
+			if (item.locale) group.locales.add(item.locale);
+			if (item.locale === sourceLocale) group.source = item;
+			groups.set(key, group);
+		}
+		for (const { source, locales } of groups.values()) {
+			if (!source) continue;
+			const absent = targetLocales.filter((locale) => !locales.has(locale));
+			if (absent.length === 0) continue;
+			missing.push({
+				title: entryTitle(source.data, source.slug ?? source.id, collection.titleField),
+				collection: collection.slug,
+				id: source.id,
+				locale: sourceLocale,
+				locales: absent,
+			});
+		}
+	});
+	return { missing, partial };
 }
 
 export async function handleOverview(ctx: PluginContext): Promise<BlockResponse> {
 	const statuses = ctx.storage.status!;
-	const [outdatedCount, pendingCount, doneCount, outdated, pending] = await Promise.all([
+	const sourceLocale = await resolveSourceLocale(ctx);
+	const [targetLocales, outdatedCount, pendingCount, doneCount, outdated, pending] = await Promise.all([
+		resolveTargetLocales(ctx, sourceLocale),
 		statuses.count({ outdated: true }),
 		statuses.count({ state: "copied", outdated: false }),
 		statuses.count({ state: "translated", outdated: false }),
 		statuses.query({ where: { outdated: true }, limit: LIST_LIMIT }),
 		statuses.query({ where: { state: "copied", outdated: false }, limit: LIST_LIMIT }),
 	]);
+	const { missing, partial } = await findMissing(ctx, sourceLocale, targetLocales);
+	const missingCount = missing.reduce((sum, item) => sum + item.locales.length, 0);
+	const outdatedList = fromStatuses(outdated);
+	const pendingList = fromStatuses(pending);
 
 	const blocks: Block[] = [
 		{
 			type: "stats",
 			items: [
+				{ label: "Not translated", value: missingCount, description: "Languages without an entry" },
 				{ label: "Outdated", value: outdatedCount, description: "Source changed since translation" },
 				{ label: "Needs translation", value: pendingCount, description: "Copied from the source" },
 				{ label: "Up to date", value: doneCount },
 			],
 		},
-		...workList("Outdated", outdated.items as { data: TranslationStatus }[], outdated.hasMore),
-		...workList("Needs translation", pending.items as { data: TranslationStatus }[], pending.hasMore),
+		...workList(
+			"Not translated",
+			missing.slice(0, LIST_LIMIT),
+			[
+				missing.length > LIST_LIMIT ? `Showing the first ${LIST_LIMIT}.` : "",
+				partial ? `Only the first ${SCAN_LIMIT} entries of each collection were checked.` : "",
+			]
+				.filter(Boolean)
+				.join(" ") || undefined,
+		),
+		...workList("Outdated", outdatedList.items, outdatedList.note),
+		...workList("Needs translation", pendingList.items, pendingList.note),
 	];
-	if (outdatedCount + pendingCount === 0) {
-		blocks.push({ type: "context", text: "Nothing to translate. New translations appear here once created from the editor panel." });
+	if (targetLocales.length === 0) {
+		blocks.push({
+			type: "actions",
+			elements: [{ type: "link", label: "Choose target languages", target: { kind: "plugin-settings" } }],
+		});
+	} else if (missingCount + outdatedCount + pendingCount === 0) {
+		blocks.push({ type: "context", text: "Every entry is translated and up to date." });
 	}
 	return { blocks };
 }

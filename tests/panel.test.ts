@@ -106,6 +106,7 @@ describe("translations panel", () => {
 	});
 
 	it("flags a translation as outdated when the source changes and clears it when the source is reverted", async () => {
+		await host.fixtures.plugin.setting("targetLocales", "fr");
 		const source = await host.fixtures.content("posts", {
 			slug: "hallo-welt",
 			locale: "de",
@@ -126,6 +127,7 @@ describe("translations panel", () => {
 	});
 
 	it("lists untranslated copies on the overview under their latest title", async () => {
+		await host.fixtures.plugin.setting("targetLocales", "fr");
 		const source = await host.fixtures.content("posts", { slug: "hallo", locale: "de", data: { title: "Hallo" } });
 		await host.admin.actEditorPanel("translations", "posts", source.id, "create", { value: "fr" });
 		const fr = (await host.inspect.content.list("posts")).find((row) => row.locale === "fr")!;
@@ -135,13 +137,26 @@ describe("translations panel", () => {
 
 		const page = await host.admin.loadPage("/translations");
 		expect(page.blocks.find((block) => block.type === "stats")).toMatchObject({
-			items: [{ value: 0 }, { value: 1 }, { value: 0 }],
+			items: [{ value: 0 }, { value: 0 }, { value: 1 }, { value: 0 }],
 		});
 		expect(lines(page)).toEqual(["Bonjour — posts · FR"]);
 
 		await host.actions.content.trash("posts", fr.id);
 		await until(async () => (await storedStatus(fr.id)) === null);
-		expect(lines(await host.admin.loadPage("/translations"))).toEqual([]);
+		expect(lines(await host.admin.loadPage("/translations"))).toEqual(["Hallo — posts · FR"]);
+	});
+
+	it("lists source entries by the target languages they have no entry in", async () => {
+		const hallo = await host.fixtures.content("posts", { slug: "hallo", locale: "de", data: { title: "Hallo" } });
+		await host.fixtures.content("posts", { slug: "tschuess", locale: "de", data: { title: "Tschüss" } });
+		await host.fixtures.content("posts", { slug: "hello", locale: "en", data: { title: "Hello" } });
+		await host.admin.actEditorPanel("translations", "posts", hallo.id, "create", { value: "fr" });
+
+		const page = await host.admin.loadPage("/translations");
+		expect(page.blocks.find((block) => block.type === "stats")).toMatchObject({
+			items: [{ value: 3 }, { value: 0 }, { value: 1 }, { value: 0 }],
+		});
+		expect(lines(page).sort()).toEqual(["Hallo — posts · FR", "Hallo — posts · IT", "Tschüss — posts · FR, IT"]);
 	});
 
 	it("ignores a create request for a language that is not configured", async () => {

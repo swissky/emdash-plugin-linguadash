@@ -38,12 +38,17 @@ export function parseLocales(value: unknown): string[] {
 	return [...new Set(locales)];
 }
 
-export function entryTitle(data: Record<string, unknown>, fallback: string): string {
-	return typeof data.title === "string" && data.title.trim() ? data.title.trim() : fallback;
+export function entryTitle(data: Record<string, unknown>, fallback: string, titleField?: string | null): string {
+	const value = data[titleField ?? "title"];
+	return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
 
 export async function resolveSourceLocale(ctx: PluginContext): Promise<string> {
 	return parseLocales(await ctx.settings.get<string>("sourceLocale"))[0] ?? ctx.site.locale;
+}
+
+export async function resolveTargetLocales(ctx: PluginContext, sourceLocale: string): Promise<string[]> {
+	return parseLocales(await ctx.settings.get<string>("targetLocales")).filter((locale) => locale !== sourceLocale);
 }
 
 export function translatableFields(schema: { fields: { slug: string; translatable?: boolean }[] } | null | undefined) {
@@ -76,13 +81,12 @@ async function latest(content: WritableContent, collection: string, id: string) 
 
 async function loadState(ctx: PluginContext, entry: Entry) {
 	const content = writableContent(ctx);
-	const [sourceLocale, targetSetting, group, schema] = await Promise.all([
+	const [sourceLocale, group, schema] = await Promise.all([
 		resolveSourceLocale(ctx),
-		ctx.settings.get<string>("targetLocales"),
 		content.getTranslations(entry.collection, entry.id),
 		ctx.schema?.getCollection(entry.collection),
 	]);
-	const targetLocales = parseLocales(targetSetting).filter((locale) => locale !== sourceLocale);
+	const targetLocales = await resolveTargetLocales(ctx, sourceLocale);
 	const byLocale = new Map<string, TranslationSummary>();
 	for (const row of group.translations) if (row.locale) byLocale.set(row.locale, row);
 
@@ -99,7 +103,8 @@ async function loadState(ctx: PluginContext, entry: Entry) {
 	const locales = [
 		...new Set([sourceLocale, ...targetLocales, ...byLocale.keys()]),
 	];
-	return { content, sourceLocale, targetLocales, byLocale, translatable, source, sourceHash, statuses, locales };
+	const titleField = schema?.titleField ?? null;
+	return { content, sourceLocale, targetLocales, byLocale, translatable, titleField, source, sourceHash, statuses, locales };
 }
 
 type State = Awaited<ReturnType<typeof loadState>>;
@@ -177,7 +182,7 @@ async function createTranslation(ctx: PluginContext, state: State, entry: Entry,
 		state: "copied",
 		sourceHash: state.sourceHash!,
 		outdated: false,
-		title: entryTitle(created.data, created.slug ?? created.id),
+		title: entryTitle(created.data, created.slug ?? created.id, state.titleField),
 		updatedAt: new Date().toISOString(),
 	};
 	await ctx.storage.status!.put(statusId(entry.collection, created.id), status);

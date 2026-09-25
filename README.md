@@ -10,8 +10,9 @@ as translated once the text is done.
 
 Each translation records a fingerprint of the source's translatable fields. When the source is
 saved with different values, its translations are flagged **Outdated**; reverting the source
-clears the flag. The **Translations** admin page counts outdated, untranslated and up-to-date
-entries and links to the ones that need work.
+clears the flag. The **Translations** admin page counts languages without an entry, outdated,
+untranslated and up-to-date translations, and links to the ones that need work. Missing languages
+are found by checking the first 100 entries of each collection with translatable fields.
 
 ## Public-site components
 
