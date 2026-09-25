@@ -1,9 +1,19 @@
 import type { Block, BlockResponse } from "@emdash-cms/blocks";
 import type { PluginContext, PluginUiContext } from "emdash/plugin";
 
+import { SegmentMismatchError } from "./portable-text.js";
+import {
+	applyTranslations,
+	collectSegments,
+	PROVIDER_NAMES,
+	ProviderError,
+	readProviderConfig,
+	translateSegments,
+} from "./translate.js";
+
 type ContentAccess = NonNullable<PluginContext["content"]>;
 type WritableContent = ContentAccess &
-	Required<Pick<ContentAccess, "create" | "getTranslations" | "getRevision">>;
+	Required<Pick<ContentAccess, "create" | "update" | "getTranslations" | "getRevision">>;
 type TranslationSummary = Awaited<ReturnType<WritableContent["getTranslations"]>>["translations"][number];
 
 /** Stored per translated entry, keyed by `statusId(collection, entryId)`. */
@@ -12,8 +22,11 @@ export interface TranslationStatus {
 	targetId: string;
 	targetLocale: string;
 	sourceId: string;
-	/** `copied` = created from the source and not yet translated; `translated` = marked done. */
-	state: "copied" | "translated";
+	/**
+	 * `copied` = created from the source and not yet translated; `machine` = machine translated
+	 * and not yet reviewed; `translated` = marked done.
+	 */
+	state: "copied" | "machine" | "translated";
 	/** Fingerprint of the source's translatable fields when the state was recorded. */
 	sourceHash: string;
 	/** Set by the save hook when the source's translatable fields no longer match `sourceHash`. */
@@ -65,7 +78,7 @@ export async function fingerprint(fields: readonly string[], data: Record<string
 
 function writableContent(ctx: PluginContext): WritableContent {
 	const content = ctx.content;
-	if (!content?.create || !content.getTranslations || !content.getRevision) {
+	if (!content?.create || !content.update || !content.getTranslations || !content.getRevision) {
 		throw new Error("LinguaDash needs the content:write and content:revisions:read capabilities");
 	}
 	return content as WritableContent;
@@ -81,10 +94,11 @@ async function latest(content: WritableContent, collection: string, id: string) 
 
 async function loadState(ctx: PluginContext, entry: Entry) {
 	const content = writableContent(ctx);
-	const [sourceLocale, group, schema] = await Promise.all([
+	const [sourceLocale, group, schema, provider] = await Promise.all([
 		resolveSourceLocale(ctx),
 		content.getTranslations(entry.collection, entry.id),
 		ctx.schema?.getCollection(entry.collection),
+		readProviderConfig(ctx),
 	]);
 	const targetLocales = await resolveTargetLocales(ctx, sourceLocale);
 	const byLocale = new Map<string, TranslationSummary>();
@@ -104,7 +118,30 @@ async function loadState(ctx: PluginContext, entry: Entry) {
 		...new Set([sourceLocale, ...targetLocales, ...byLocale.keys()]),
 	];
 	const titleField = schema?.titleField ?? null;
-	return { content, sourceLocale, targetLocales, byLocale, translatable, titleField, source, sourceHash, statuses, locales };
+	const translatableSchema = (schema?.fields ?? []).filter((f) => f.translatable);
+	return {
+		content,
+		sourceLocale,
+		targetLocales,
+		byLocale,
+		translatable,
+		translatableSchema,
+		titleField,
+		source,
+		sourceHash,
+		statuses,
+		locales,
+		provider,
+	};
+}
+
+/** Machine translation may replace only rows it created or untouched copies, never reviewed work. */
+function canMachineTranslate(state: State, collection: string, locale: string): boolean {
+	if (!state.provider || !state.source || !state.targetLocales.includes(locale)) return false;
+	const row = state.byLocale.get(locale);
+	if (!row) return true;
+	const status = state.statuses.get(statusId(collection, row.id));
+	return status?.state === "copied" || status?.state === "machine";
 }
 
 type State = Awaited<ReturnType<typeof loadState>>;
@@ -115,7 +152,13 @@ function describe(state: State, collection: string, locale: string, row: Transla
 	const status = state.statuses.get(statusId(collection, row.id));
 	const outdated = status && state.sourceHash !== null && status.sourceHash !== state.sourceHash;
 	const progress =
-		status?.state === "translated" ? "Translated" : status?.state === "copied" ? "Needs translation" : "Not reviewed";
+		status?.state === "translated"
+			? "Translated"
+			: status?.state === "copied"
+				? "Needs translation"
+				: status?.state === "machine"
+					? "Machine translated, needs review"
+					: "Not reviewed";
 	return `${row.status} · ${outdated ? "Outdated: source changed" : progress}`;
 }
 
@@ -141,6 +184,16 @@ function render(state: State, entry: Entry): Block[] {
 				type: "link",
 				label: "Open",
 				target: { kind: "content", collection: entry.collection, id: row.id, locale },
+			});
+		}
+		if (canMachineTranslate(state, entry.collection, locale)) {
+			const name = PROVIDER_NAMES[state.provider!.provider];
+			elements.push({
+				type: "button",
+				action_id: "machine",
+				label: row ? `Retranslate with ${name}` : `Translate with ${name}`,
+				value: locale,
+				style: "primary",
 			});
 		}
 		if (!row && state.source && state.targetLocales.includes(locale)) {
@@ -186,6 +239,34 @@ async function createTranslation(ctx: PluginContext, state: State, entry: Entry,
 		updatedAt: new Date().toISOString(),
 	};
 	await ctx.storage.status!.put(statusId(entry.collection, created.id), status);
+}
+
+async function machineTranslate(ctx: PluginContext, state: State, entry: Entry, locale: string) {
+	const source = state.source!;
+	const copy: Record<string, unknown> = {};
+	for (const field of state.translatable) {
+		if (source.data[field] !== undefined) copy[field] = source.data[field];
+	}
+	const { segments, plans } = collectSegments(state.translatableSchema, copy);
+	const translated = await translateSegments(ctx, state.provider!, segments, state.sourceLocale, locale);
+	const data = applyTranslations(plans, translated, copy);
+
+	const row = state.byLocale.get(locale);
+	const saved = row
+		? await state.content.update(entry.collection, row.id, data)
+		: await state.content.create(entry.collection, data, { locale, translationOf: source.id });
+	const status: TranslationStatus = {
+		collection: entry.collection,
+		targetId: saved.id,
+		targetLocale: locale,
+		sourceId: source.id,
+		state: "machine",
+		sourceHash: state.sourceHash!,
+		outdated: false,
+		title: entryTitle(data, saved.slug ?? saved.id, state.titleField),
+		updatedAt: new Date().toISOString(),
+	};
+	await ctx.storage.status!.put(statusId(entry.collection, saved.id), status);
 }
 
 async function markTranslated(ctx: PluginContext, state: State, entry: Entry, locale: string) {
@@ -234,6 +315,14 @@ export async function handlePanel(
 				toast: { type: "success", message: `${locale.toUpperCase()} draft created from the source` },
 			};
 		}
+		if (action === "machine" && canMachineTranslate(state, entry.collection, locale)) {
+			await machineTranslate(ctx, state, entry, locale);
+			state = await loadState(ctx, entry);
+			return {
+				blocks: render(state, entry),
+				toast: { type: "success", message: `${locale.toUpperCase()} machine translated. Review it before publishing.` },
+			};
+		}
 		if (action === "mark-translated" && exists && locale !== state.sourceLocale && state.source) {
 			await markTranslated(ctx, state, entry, locale);
 			state = await loadState(ctx, entry);
@@ -244,10 +333,13 @@ export async function handlePanel(
 		}
 	} catch (error) {
 		ctx.log.error("translation action failed", { action, locale, error: String(error) });
-		return {
-			blocks: render(state, entry),
-			toast: { type: "error", message: "The translation could not be updated. Try again." },
-		};
+		const message =
+			error instanceof ProviderError
+				? `${error.message}. Check the API key in the language settings.`
+				: error instanceof SegmentMismatchError
+					? "The translation service changed the formatting. Nothing was saved; try again."
+					: "The translation could not be updated. Try again.";
+		return { blocks: render(state, entry), toast: { type: "error", message } };
 	}
 	return { blocks: render(state, entry), toast: { type: "info", message: "Nothing to do" } };
 }

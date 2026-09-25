@@ -14,6 +14,16 @@ clears the flag. The **Translations** admin page counts languages without an ent
 untranslated and up-to-date translations, and links to the ones that need work. Missing languages
 are found by checking the first 100 entries of each collection with translatable fields.
 
+## Machine translation
+
+Pick **DeepL** or **OpenAI (GPT)** under **Machine translation** in the plugin settings and enter
+the matching API key (DeepL Free keys ending in `:fx` use the Free API). The panel then shows a
+**Translate with …** button for each language. It saves a draft with the translatable text and
+rich-text fields translated. Marks, links and embedded blocks stay in place. The translation
+counts as **Machine translated, needs review** until an editor marks it as translated. After
+that, the button no longer appears, so reviewed work is never overwritten. Text is sent only to the provider
+you choose (`api.deepl.com`, `api-free.deepl.com` or `api.openai.com`).
+
 ## Public-site components
 
 Sandboxed plugins cannot add markup to public pages, so the package ships two Astro

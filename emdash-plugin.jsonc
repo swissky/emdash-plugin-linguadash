@@ -13,8 +13,8 @@
 	// Trust contract — what runtime APIs the plugin asks for.
 	// Changing these between releases requires a version bump because
 	// installed users have consented to the old contract.
-	"capabilities": ["content:write", "content:revisions:read", "schema:read"],
-	"allowedHosts": [],
+	"capabilities": ["content:write", "content:revisions:read", "schema:read", "network:request"],
+	"allowedHosts": ["api.deepl.com", "api-free.deepl.com", "api.openai.com"],
 	"storage": {
 		"status": { "indexes": ["collection", "targetLocale", "state", "sourceId", "outdated", ["state", "outdated"]] }
 	},
@@ -31,6 +31,34 @@
 				"type": "string",
 				"label": "Target languages",
 				"description": "Comma-separated locale codes to translate into, e.g. fr, it, en."
+			},
+			"provider": {
+				"type": "select",
+				"label": "Machine translation",
+				"description": "Adds a translate button to the Translations panel. Machine translations are saved as drafts to review.",
+				"options": [
+					{ "value": "none", "label": "Off" },
+					{ "value": "deepl", "label": "DeepL" },
+					{ "value": "openai", "label": "OpenAI (GPT)" }
+				],
+				"default": "none"
+			},
+			"deeplApiKey": {
+				"type": "secret",
+				"label": "DeepL API key",
+				"description": "Free keys end in :fx and use the DeepL Free API."
+			},
+			"openaiApiKey": { "type": "secret", "label": "OpenAI API key" },
+			"openaiModel": { "type": "string", "label": "OpenAI model", "default": "gpt-4.1-mini" },
+			"formality": {
+				"type": "select",
+				"label": "Tone",
+				"options": [
+					{ "value": "default", "label": "Default" },
+					{ "value": "more", "label": "Formal" },
+					{ "value": "less", "label": "Informal" }
+				],
+				"default": "default"
 			}
 		},
 		"editorPanels": [

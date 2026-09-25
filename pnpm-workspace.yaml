@@ -7,10 +7,10 @@ allowBuilds:
   esbuild: true
   workerd: true
 minimumReleaseAgeExclude:
-  - '@emdash-cms/admin@0.39.1'
-  - '@emdash-cms/auth@0.39.1'
-  - '@emdash-cms/blocks@0.39.1'
-  - '@emdash-cms/cloudflare@0.39.1'
-  - '@emdash-cms/gutenberg-to-portable-text@0.39.1'
-  - '@emdash-cms/plugin-test@0.2.1'
-  - emdash@0.39.1
+  - '@emdash-cms/admin@0.39.1 || 0.40.0'
+  - '@emdash-cms/auth@0.39.1 || 0.40.0'
+  - '@emdash-cms/blocks@0.39.1 || 0.40.0'
+  - '@emdash-cms/cloudflare@0.39.1 || 0.40.0'
+  - '@emdash-cms/gutenberg-to-portable-text@0.39.1 || 0.40.0'
+  - '@emdash-cms/plugin-test@0.2.1 || 0.2.2'
+  - emdash@0.39.1 || 0.40.0

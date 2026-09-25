@@ -137,10 +137,10 @@ export async function handleOverview(ctx: PluginContext): Promise<BlockResponse>
 	const [targetLocales, outdatedCount, pendingCount, doneCount, outdated, pending] = await Promise.all([
 		resolveTargetLocales(ctx, sourceLocale),
 		statuses.count({ outdated: true }),
-		statuses.count({ state: "copied", outdated: false }),
+		statuses.count({ state: { in: ["copied", "machine"] }, outdated: false }),
 		statuses.count({ state: "translated", outdated: false }),
 		statuses.query({ where: { outdated: true }, limit: LIST_LIMIT }),
-		statuses.query({ where: { state: "copied", outdated: false }, limit: LIST_LIMIT }),
+		statuses.query({ where: { state: { in: ["copied", "machine"] }, outdated: false }, limit: LIST_LIMIT }),
 	]);
 	const { missing, partial } = await findMissing(ctx, sourceLocale, targetLocales);
 	const missingCount = missing.reduce((sum, item) => sum + item.locales.length, 0);
@@ -153,7 +153,7 @@ export async function handleOverview(ctx: PluginContext): Promise<BlockResponse>
 			items: [
 				{ label: "Not translated", value: missingCount, description: "Languages without an entry" },
 				{ label: "Outdated", value: outdatedCount, description: "Source changed since translation" },
-				{ label: "Needs translation", value: pendingCount, description: "Copied from the source" },
+				{ label: "Needs translation", value: pendingCount, description: "Copied or machine translated, not reviewed" },
 				{ label: "Up to date", value: doneCount },
 			],
 		},
