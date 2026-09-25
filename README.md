@@ -16,13 +16,28 @@ are found by checking the first 100 entries of each collection with translatable
 
 ## Machine translation
 
-Pick **DeepL** or **OpenAI (GPT)** under **Machine translation** in the plugin settings and enter
-the matching API key (DeepL Free keys ending in `:fx` use the Free API). The panel then shows a
+Pick **DeepL**, **OpenAI (GPT)** or **Cloudflare AI Gateway** under **Machine translation** in the
+plugin settings and enter the matching credentials. DeepL Free keys ending in `:fx` use the Free
+API. Cloudflare needs the account ID and an API token with the **Account > Workers AI > Read**
+permission. Requests go through the configured AI Gateway (`default` unless you change it), so
+gateway logging, caching and rate limits apply. The model can be a Workers AI model
+(`@cf/meta/llama-3.3-70b-instruct-fp8-fast` by default) or a third-party gateway model such as
+`openai/gpt-4.1-mini`, billed through Cloudflare Unified Billing. The panel then shows a
 **Translate with …** button for each language. It saves a draft with the translatable text and
 rich-text fields translated. Marks, links and embedded blocks stay in place. The translation
 counts as **Machine translated, needs review** until an editor marks it as translated. After
 that, the button no longer appears, so reviewed work is never overwritten. Text is sent only to the provider
-you choose (`api.deepl.com`, `api-free.deepl.com` or `api.openai.com`).
+you choose (`api.deepl.com`, `api-free.deepl.com`, `api.openai.com` or `api.cloudflare.com`).
+
+## SEO per language
+
+For collections with SEO enabled, a new translation copies the source's SEO title, description,
+social image and noindex setting. Machine translation also translates the SEO title and
+description. The canonical URL is never copied, because it would point search engines from the
+translation back to the source page. Each language keeps its own canonical, which is its own URL
+by default. A change to the source's SEO title or description flags its translations
+**Outdated**, just like a change to a content field. EmDash itself emits the `hreflang`
+alternates between translations in the page head and the sitemaps.
 
 ## Public-site components
 

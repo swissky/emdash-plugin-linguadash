@@ -14,7 +14,7 @@
 	// Changing these between releases requires a version bump because
 	// installed users have consented to the old contract.
 	"capabilities": ["content:write", "content:revisions:read", "schema:read", "network:request"],
-	"allowedHosts": ["api.deepl.com", "api-free.deepl.com", "api.openai.com"],
+	"allowedHosts": ["api.deepl.com", "api-free.deepl.com", "api.openai.com", "api.cloudflare.com"],
 	"storage": {
 		"status": { "indexes": ["collection", "targetLocale", "state", "sourceId", "outdated", ["state", "outdated"]] }
 	},
@@ -39,7 +39,8 @@
 				"options": [
 					{ "value": "none", "label": "Off" },
 					{ "value": "deepl", "label": "DeepL" },
-					{ "value": "openai", "label": "OpenAI (GPT)" }
+					{ "value": "openai", "label": "OpenAI (GPT)" },
+					{ "value": "cloudflare", "label": "Cloudflare AI Gateway" }
 				],
 				"default": "none"
 			},
@@ -50,6 +51,28 @@
 			},
 			"openaiApiKey": { "type": "secret", "label": "OpenAI API key" },
 			"openaiModel": { "type": "string", "label": "OpenAI model", "default": "gpt-4.1-mini" },
+			"cloudflareAccountId": {
+				"type": "string",
+				"label": "Cloudflare account ID",
+				"description": "The 32-character ID shown in the Cloudflare dashboard sidebar."
+			},
+			"cloudflareApiToken": {
+				"type": "secret",
+				"label": "Cloudflare API token",
+				"description": "Needs the Account > Workers AI > Read permission."
+			},
+			"cloudflareGatewayId": {
+				"type": "string",
+				"label": "AI Gateway ID",
+				"description": "Requests go through this gateway for logging, caching and rate limits.",
+				"default": "default"
+			},
+			"cloudflareModel": {
+				"type": "string",
+				"label": "Cloudflare model",
+				"description": "A Workers AI model such as @cf/meta/llama-3.3-70b-instruct-fp8-fast, or a gateway model such as openai/gpt-4.1-mini (billed through Unified Billing).",
+				"default": "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+			},
 			"formality": {
 				"type": "select",
 				"label": "Tone",

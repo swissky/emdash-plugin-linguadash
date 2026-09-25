@@ -8,6 +8,7 @@ import {
 	PROVIDER_NAMES,
 	ProviderError,
 	readProviderConfig,
+	type SeoText,
 	translateSegments,
 } from "./translate.js";
 
@@ -68,8 +69,11 @@ export function translatableFields(schema: { fields: { slug: string; translatabl
 	return (schema?.fields ?? []).filter((f) => f.translatable).map((f) => f.slug);
 }
 
-export async function fingerprint(fields: readonly string[], data: Record<string, unknown>) {
-	const payload = JSON.stringify(fields.map((field) => [field, data[field] ?? null]));
+/** Hash of the translatable fields plus, when set, the SEO title and description. */
+export async function fingerprint(fields: readonly string[], data: Record<string, unknown>, seo?: SeoText | null) {
+	const entries: unknown[] = fields.map((field) => [field, data[field] ?? null]);
+	if (seo?.title || seo?.description) entries.push(["seo", seo.title ?? null, seo.description ?? null]);
+	const payload = JSON.stringify(entries);
 	const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(payload));
 	return [...new Uint8Array(digest).slice(0, 12)]
 		.map((byte) => byte.toString(16).padStart(2, "0"))
@@ -107,7 +111,7 @@ async function loadState(ctx: PluginContext, entry: Entry) {
 	const translatable = translatableFields(schema);
 	const sourceRow = byLocale.get(sourceLocale);
 	const source = sourceRow ? await latest(content, entry.collection, sourceRow.id) : null;
-	const sourceHash = source ? await fingerprint(translatable, source.data) : null;
+	const sourceHash = source ? await fingerprint(translatable, source.data, source.seo) : null;
 
 	const targetIds = group.translations
 		.filter((row) => row.locale !== sourceLocale)
@@ -217,13 +221,31 @@ function render(state: State, entry: Entry): Block[] {
 	return blocks;
 }
 
-async function createTranslation(ctx: PluginContext, state: State, entry: Entry, locale: string) {
+/**
+ * The source's translatable fields, plus its SEO panel without the canonical URL: a copied
+ * canonical would point search engines from the translation back to the source.
+ */
+function translatableCopy(state: State) {
 	const source = state.source!;
 	const data: Record<string, unknown> = {};
 	for (const field of state.translatable) {
 		if (source.data[field] !== undefined) data[field] = source.data[field];
 	}
-	const created = await state.content.create(entry.collection, data, {
+	const seo = source.seo
+		? {
+				title: source.seo.title,
+				description: source.seo.description,
+				image: source.seo.image,
+				noIndex: source.seo.noIndex,
+			}
+		: undefined;
+	return { data, seo };
+}
+
+async function createTranslation(ctx: PluginContext, state: State, entry: Entry, locale: string) {
+	const source = state.source!;
+	const { data, seo } = translatableCopy(state);
+	const created = await state.content.create(entry.collection, seo ? { ...data, seo } : data, {
 		locale,
 		translationOf: source.id,
 	});
@@ -243,18 +265,16 @@ async function createTranslation(ctx: PluginContext, state: State, entry: Entry,
 
 async function machineTranslate(ctx: PluginContext, state: State, entry: Entry, locale: string) {
 	const source = state.source!;
-	const copy: Record<string, unknown> = {};
-	for (const field of state.translatable) {
-		if (source.data[field] !== undefined) copy[field] = source.data[field];
-	}
-	const { segments, plans } = collectSegments(state.translatableSchema, copy);
+	const copy = translatableCopy(state);
+	const { segments, plans } = collectSegments(state.translatableSchema, copy.data, copy.seo);
 	const translated = await translateSegments(ctx, state.provider!, segments, state.sourceLocale, locale);
-	const data = applyTranslations(plans, translated, copy);
+	const { data, seo } = applyTranslations(plans, translated, copy.data, copy.seo);
+	const input = copy.seo ? { ...data, seo: { ...copy.seo, ...seo } } : data;
 
 	const row = state.byLocale.get(locale);
 	const saved = row
-		? await state.content.update(entry.collection, row.id, data)
-		: await state.content.create(entry.collection, data, { locale, translationOf: source.id });
+		? await state.content.update(entry.collection, row.id, input)
+		: await state.content.create(entry.collection, input, { locale, translationOf: source.id });
 	const status: TranslationStatus = {
 		collection: entry.collection,
 		targetId: saved.id,

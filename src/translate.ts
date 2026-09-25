@@ -2,50 +2,87 @@ import type { PluginContext } from "emdash/plugin";
 
 import { applySegments, escapeXml, extractSegments, unescapeXml, type PortableTextNode } from "./portable-text.js";
 
-export type Provider = "deepl" | "openai";
+export type Provider = "deepl" | "openai" | "cloudflare";
 
 export interface ProviderConfig {
 	provider: Provider;
 	apiKey: string;
 	model: string;
 	formality: "default" | "more" | "less";
+	/** Cloudflare only. */
+	accountId?: string;
+	gatewayId?: string;
 }
 
-export const PROVIDER_NAMES: Record<Provider, string> = { deepl: "DeepL", openai: "GPT" };
+export const PROVIDER_NAMES: Record<Provider, string> = {
+	deepl: "DeepL",
+	openai: "GPT",
+	cloudflare: "Cloudflare AI",
+};
+
+export const DEFAULT_CLOUDFLARE_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 
 export class ProviderError extends Error {
 	override name = "ProviderError";
 }
 
 const BATCH_SIZE = 50;
+const ACCOUNT_ID = /^[0-9a-f]{32}$/i;
+const GATEWAY_ID = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
 
 export async function readProviderConfig(ctx: PluginContext): Promise<ProviderConfig | null> {
-	const [provider, deeplKey, openaiKey, model, formality] = await Promise.all([
-		ctx.settings.get<string>("provider"),
-		ctx.settings.get<string>("deeplApiKey"),
-		ctx.settings.get<string>("openaiApiKey"),
-		ctx.settings.get<string>("openaiModel"),
-		ctx.settings.get<string>("formality"),
-	]);
-	const apiKey = provider === "deepl" ? deeplKey : provider === "openai" ? openaiKey : undefined;
-	if ((provider !== "deepl" && provider !== "openai") || !apiKey?.trim()) return null;
-	return {
-		provider,
-		apiKey: apiKey.trim(),
-		model: model?.trim() || "gpt-4.1-mini",
-		formality: formality === "more" || formality === "less" ? formality : "default",
-	};
+	const setting = async (key: string) => ((await ctx.settings.get<string>(key)) ?? "").trim();
+	const [provider, formality] = await Promise.all([setting("provider"), setting("formality")]);
+	const tone = formality === "more" || formality === "less" ? formality : "default";
+	switch (provider) {
+		case "deepl": {
+			const apiKey = await setting("deeplApiKey");
+			return apiKey ? { provider, apiKey, model: "", formality: tone } : null;
+		}
+		case "openai": {
+			const [apiKey, model] = await Promise.all([setting("openaiApiKey"), setting("openaiModel")]);
+			return apiKey ? { provider, apiKey, model: model || "gpt-4.1-mini", formality: tone } : null;
+		}
+		case "cloudflare": {
+			const [apiKey, accountId, gatewayId, model] = await Promise.all([
+				setting("cloudflareApiToken"),
+				setting("cloudflareAccountId"),
+				setting("cloudflareGatewayId"),
+				setting("cloudflareModel"),
+			]);
+			if (!apiKey || !accountId) return null;
+			return {
+				provider,
+				apiKey,
+				model: model || DEFAULT_CLOUDFLARE_MODEL,
+				formality: tone,
+				accountId,
+				gatewayId: gatewayId || "default",
+			};
+		}
+		default:
+			return null;
+	}
 }
 
-type FieldPlan = { field: string; kind: "text" } | { field: string; kind: "portableText"; count: number };
+/** SEO text that gets translated along with the content fields. */
+export interface SeoText {
+	title?: string | null;
+	description?: string | null;
+}
+
+type FieldPlan =
+	| { field: string; kind: "text" }
+	| { field: string; kind: "portableText"; count: number }
+	| { field: "title" | "description"; kind: "seo" };
 
 interface SchemaField {
 	slug: string;
 	type: string;
 }
 
-/** Collects one XML segment per text field and per Portable Text block, in field order. */
-export function collectSegments(fields: readonly SchemaField[], data: Record<string, unknown>) {
+/** Collects one XML segment per text field, per Portable Text block and per SEO text, in that order. */
+export function collectSegments(fields: readonly SchemaField[], data: Record<string, unknown>, seo?: SeoText) {
 	const segments: string[] = [];
 	const plans: FieldPlan[] = [];
 	for (const field of fields) {
@@ -60,27 +97,54 @@ export function collectSegments(fields: readonly SchemaField[], data: Record<str
 			plans.push({ field: field.slug, kind: "portableText", count: blockSegments.length });
 		}
 	}
+	for (const key of ["title", "description"] as const) {
+		const value = seo?.[key];
+		if (typeof value === "string" && value.trim()) {
+			segments.push(escapeXml(value));
+			plans.push({ field: key, kind: "seo" });
+		}
+	}
 	return { segments, plans };
 }
 
-/** Writes translated segments back into a copy of `data`; throws `SegmentMismatchError` on damaged markup. */
+function plainText(segment: string | undefined): string {
+	return unescapeXml((segment ?? "").replace(/<[^>]*>/g, ""));
+}
+
+/**
+ * Writes translated segments back into copies of `data` and `seo`; throws `SegmentMismatchError`
+ * on damaged markup.
+ */
 export function applyTranslations(
 	plans: readonly FieldPlan[],
 	translated: readonly string[],
 	data: Record<string, unknown>,
-): Record<string, unknown> {
+	seo: SeoText = {},
+): { data: Record<string, unknown>; seo: SeoText } {
 	const result = { ...data };
+	const seoResult = { ...seo };
 	let next = 0;
 	for (const plan of plans) {
-		if (plan.kind === "text") {
-			result[plan.field] = unescapeXml((translated[next++] ?? "").replace(/<[^>]*>/g, ""));
-		} else {
-			const slice = translated.slice(next, next + plan.count);
-			next += plan.count;
-			result[plan.field] = applySegments(data[plan.field] as PortableTextNode[], slice);
+		switch (plan.kind) {
+			case "text":
+				result[plan.field] = plainText(translated[next++]);
+				break;
+			case "seo":
+				seoResult[plan.field] = plainText(translated[next++]);
+				break;
+			case "portableText": {
+				const slice = translated.slice(next, next + plan.count);
+				next += plan.count;
+				result[plan.field] = applySegments(data[plan.field] as PortableTextNode[], slice);
+				break;
+			}
+			default: {
+				const unhandled: never = plan;
+				throw new Error(`Unknown field plan ${JSON.stringify(unhandled)}`);
+			}
 		}
 	}
-	return result;
+	return { data: result, seo: seoResult };
 }
 
 export function deeplTargetLang(locale: string): string {
@@ -122,33 +186,61 @@ const OPENAI_PROMPT = [
 	"Reply with a JSON object {\"segments\": [...]} holding the translations in the same order and the same number of items.",
 ].join(" ");
 
-async function callOpenAi(ctx: PluginContext, config: ProviderConfig, texts: string[], from: string, to: string) {
+function chatEndpoint(config: ProviderConfig): { url: string; headers: Record<string, string>; name: string } {
+	const headers: Record<string, string> = {
+		Authorization: `Bearer ${config.apiKey}`,
+		"Content-Type": "application/json",
+	};
+	if (config.provider !== "cloudflare") {
+		return { url: "https://api.openai.com/v1/chat/completions", headers, name: "OpenAI" };
+	}
+	if (!ACCOUNT_ID.test(config.accountId ?? "")) {
+		throw new ProviderError("The Cloudflare account ID should be 32 hexadecimal characters");
+	}
+	if (!GATEWAY_ID.test(config.gatewayId ?? "")) {
+		throw new ProviderError("The AI Gateway ID may only contain letters, digits, - and _");
+	}
+	headers["cf-aig-gateway-id"] = config.gatewayId!;
+	return {
+		url: `https://api.cloudflare.com/client/v4/accounts/${config.accountId}/ai/v1/chat/completions`,
+		headers,
+		name: "Cloudflare AI Gateway",
+	};
+}
+
+/** Parses `{"segments": [...]}`, also when a model wraps it in a Markdown code fence. */
+function parseSegments(content: unknown): unknown {
+	if (typeof content !== "string") return null;
+	const json = content.replace(/^\s*```(?:json)?\s*|\s*```\s*$/g, "");
+	try {
+		return (JSON.parse(json) as { segments?: unknown } | null)?.segments;
+	} catch {
+		return null;
+	}
+}
+
+async function callChat(ctx: PluginContext, config: ProviderConfig, texts: string[], from: string, to: string) {
+	const { url, headers, name } = chatEndpoint(config);
 	const tone =
 		config.formality === "more" ? " Use a formal tone." : config.formality === "less" ? " Use an informal tone." : "";
-	const response = await ctx.http!.fetch("https://api.openai.com/v1/chat/completions", {
+	const response = await ctx.http!.fetch(url, {
 		method: "POST",
-		headers: { Authorization: `Bearer ${config.apiKey}`, "Content-Type": "application/json" },
+		headers,
 		body: JSON.stringify({
 			model: config.model,
-			response_format: { type: "json_object" },
+			// Not every model behind the gateway supports JSON mode; the prompt asks for JSON either way.
+			...(config.provider === "openai" ? { response_format: { type: "json_object" } } : {}),
 			messages: [
 				{ role: "system", content: OPENAI_PROMPT + tone },
 				{ role: "user", content: JSON.stringify({ from, to, segments: texts }) },
 			],
 		}),
 	});
-	if (!response.ok) throw new ProviderError(`OpenAI responded with ${response.status}`);
+	if (!response.ok) throw new ProviderError(`${name} responded with ${response.status}`);
 	const json = (await response.json()) as { choices?: { message?: { content?: unknown } }[] };
-	const content = json.choices?.[0]?.message?.content;
-	let parsed: unknown;
-	try {
-		parsed = typeof content === "string" ? JSON.parse(content) : null;
-	} catch {
-		parsed = null;
-	}
-	const segments = (parsed as { segments?: unknown } | null)?.segments;
+	const segments = parseSegments(json.choices?.[0]?.message?.content);
 	if (!Array.isArray(segments) || segments.length !== texts.length || !segments.every((s) => typeof s === "string")) {
-		throw new ProviderError("OpenAI returned an unexpected response");
+		throw new ProviderError(`${name} returned an unexpected response`);
 	}
 	return segments as string[];
 }
@@ -161,7 +253,7 @@ export async function translateSegments(
 	to: string,
 ): Promise<string[]> {
 	if (!ctx.http) throw new ProviderError("LinguaDash needs the network:request capability");
-	const call = config.provider === "deepl" ? callDeepl : callOpenAi;
+	const call = config.provider === "deepl" ? callDeepl : callChat;
 	const out: string[] = [];
 	for (let i = 0; i < segments.length; i += BATCH_SIZE) {
 		// oxlint-disable-next-line no-await-in-loop -- providers rate-limit parallel requests

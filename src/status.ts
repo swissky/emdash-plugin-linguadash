@@ -14,7 +14,13 @@ import {
 const LIST_LIMIT = 25;
 const SCAN_LIMIT = 100;
 
-type SavedEntry = { id?: unknown; slug?: unknown; locale?: unknown; data?: unknown };
+type SavedEntry = {
+	id?: unknown;
+	slug?: unknown;
+	locale?: unknown;
+	data?: unknown;
+	seo?: { title?: string | null; description?: string | null };
+};
 
 /**
  * Keeps stored statuses in step with saves: a source save flags or clears `outdated` on its
@@ -30,7 +36,7 @@ export async function trackSave(event: ContentHookEvent, ctx: PluginContext): Pr
 		const { items } = await statuses.query({ where: { sourceId: saved.id }, limit: 100 });
 		if (items.length === 0) return;
 		const schema = await ctx.schema?.getCollection(event.collection);
-		const hash = await fingerprint(translatableFields(schema), data);
+		const hash = await fingerprint(translatableFields(schema), data, saved.seo);
 		const changed = (items as { id: string; data: TranslationStatus }[])
 			.filter(({ data: status }) => (status.sourceHash !== hash) !== Boolean(status.outdated))
 			.map(({ id, data: status }) => ({ id, data: { ...status, outdated: status.sourceHash !== hash } }));
