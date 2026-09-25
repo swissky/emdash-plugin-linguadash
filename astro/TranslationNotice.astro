@@ -1,0 +1,71 @@
+---
+/**
+ * Tells visitors that the page is shown in a fallback language. Pass the `fallbackLocale`
+ * returned by `getEmDashEntry`; renders nothing when it is unset.
+ *
+ * With `collection` and `entryId`, the notice links to the requested language's translation
+ * when one exists under a different slug, instead of saying it is missing.
+ *
+ * Built-in text exists for English, German, French and Italian. Use `message` (with
+ * `{requested}` and `{fallback}` placeholders) or the default slot for other wording of the
+ * "not translated yet" notice.
+ */
+import { getHreflangAlternates, getSiteSettings } from "emdash";
+
+import { fallbackNotice, toPath } from "./links.js";
+
+interface Props {
+	/** `fallbackLocale` from the `getEmDashEntry` result. */
+	fallbackLocale?: string;
+	/** Locale the visitor asked for. Defaults to `Astro.currentLocale`. */
+	locale?: string;
+	/** Collection of the entry being viewed. */
+	collection?: string;
+	/** ID of the entry being viewed (`entry.data.id`). */
+	entryId?: string;
+	/** Match Astro's `trailingSlash` setting when it is not "ignore". */
+	trailingSlash?: "always" | "never" | "ignore";
+	message?: string;
+	class?: string;
+}
+
+const {
+	fallbackLocale,
+	locale = Astro.currentLocale,
+	collection,
+	entryId,
+	trailingSlash,
+	message,
+	class: className,
+} = Astro.props;
+
+const isFallback = !!fallbackLocale && !!locale && fallbackLocale !== locale;
+let translationHref: string | undefined;
+if (isFallback && collection && entryId) {
+	const alternates = await getHreflangAlternates(collection, entryId, {
+		siteUrl: (await getSiteSettings()).url || Astro.url.origin,
+		trailingSlash,
+	});
+	const translation = alternates.find((alternate) => alternate.hreflang === locale);
+	translationHref = translation && toPath(translation.href);
+}
+---
+
+{
+	isFallback &&
+		(translationHref ? (
+			<p role="note" lang={locale} class={className}>
+				<a href={translationHref} hreflang={locale}>
+					{fallbackNotice("available", locale!, fallbackLocale!)}
+				</a>
+			</p>
+		) : (
+			<p role="note" lang={locale} class={className}>
+				{Astro.slots.has("default") ? (
+					<slot />
+				) : (
+					fallbackNotice("missing", locale!, fallbackLocale!, message)
+				)}
+			</p>
+		))
+}

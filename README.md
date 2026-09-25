@@ -2,6 +2,54 @@
 
 A sandboxed plugin for [EmDash CMS](https://emdashcms.com).
 
+## Public-site components
+
+Sandboxed plugins cannot add markup to public pages, so the package ships two Astro
+components for your theme. Both need [Astro i18n routing](https://docs.emdashcms.com/guides/internationalization)
+and render nothing without it.
+
+```astro
+---
+import { getEmDashEntry } from "emdash";
+import { LanguageSwitcher, TranslationNotice } from "emdash-plugin-linguadash/astro";
+
+const { entry, fallbackLocale } = await getEmDashEntry("posts", slug, {
+	locale: Astro.currentLocale,
+});
+---
+
+<LanguageSwitcher collection="posts" entryId={entry.data.id} />
+<TranslationNotice fallbackLocale={fallbackLocale} collection="posts" entryId={entry.data.id} />
+```
+
+**`<LanguageSwitcher>`** lists every configured locale by its own name ("Deutsch",
+"Français"). Each link goes to the published translation of the entry, or to that locale's
+homepage when there is none. Leave out `collection` and `entryId` on pages that are not
+entries to link every homepage. It reuses the hreflang lookup that `<EmDashHead>` already
+made for the page, so it adds no database query.
+
+| Prop | Description |
+| --- | --- |
+| `collection`, `entryId` | The entry being viewed (`entry.data.id`). |
+| `labels` | Link text per locale, e.g. `{ de: "DE", fr: "FR" }`. |
+| `label` | Accessible name of the `<nav>`. Default `"Language"`. |
+| `trailingSlash` | Match Astro's `trailingSlash` when it is not `"ignore"`. |
+| `class` | Class on the `<nav>`. |
+
+The current language has `aria-current="page"`; links to a homepage because the entry is not
+translated have `data-translated="false"`. The component ships no styles.
+
+**`<TranslationNotice>`** renders a `<p role="note">` when `getEmDashEntry` fell back to
+another locale: "This page isn't available in Italian yet. You're reading the German
+version." With `collection` and `entryId`, it links to the requested language's
+translation instead when one exists under a different slug. Built-in text covers English,
+German, French and Italian; other languages get English. Override the "not translated"
+text with `message` (placeholders `{requested}` and `{fallback}`) or the default slot.
+
+Fallback needs `emdash` with the locale fallback fix for
+[#1679](https://github.com/emdash-cms/emdash/issues/1679); until then `getEmDashEntry`
+returns no entry instead of the fallback, and the notice never shows.
+
 ## Develop
 
 ```sh

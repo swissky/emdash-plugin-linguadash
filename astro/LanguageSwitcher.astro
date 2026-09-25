@@ -1,0 +1,81 @@
+---
+/**
+ * Language switcher for EmDash sites with Astro i18n routing.
+ *
+ * On a content entry, each language links to its published translation, or to that
+ * language's homepage when there is none. Without `collection`/`entryId` every language
+ * links to its homepage. Renders nothing when fewer than two locales are configured.
+ *
+ * Untranslated links carry `data-translated="false"`; the current language carries
+ * `aria-current="page"`.
+ */
+import { getHreflangAlternates, getI18nConfig, getSiteSettings } from "emdash";
+
+import { switcherLinks } from "./links.js";
+
+interface Props {
+	/** Collection of the entry being viewed. */
+	collection?: string;
+	/** ID of the entry being viewed. */
+	entryId?: string;
+	/** Link text per locale. Defaults to each language's own name, e.g. "Français". */
+	labels?: Record<string, string>;
+	/** Accessible name of the navigation. */
+	label?: string;
+	/** Match Astro's `trailingSlash` setting when it is not "ignore". */
+	trailingSlash?: "always" | "never" | "ignore";
+	class?: string;
+}
+
+const {
+	collection,
+	entryId,
+	labels,
+	label = "Language",
+	trailingSlash,
+	class: className,
+} = Astro.props;
+
+const i18n = getI18nConfig();
+let links: ReturnType<typeof switcherLinks> = [];
+if (i18n && i18n.locales.length > 1) {
+	// `astro:i18n` throws on import when Astro i18n is not configured.
+	const { getRelativeLocaleUrl } = await import("astro:i18n");
+	const alternates =
+		collection && entryId
+			? await getHreflangAlternates(collection, entryId, {
+					siteUrl: (await getSiteSettings()).url || Astro.url.origin,
+					trailingSlash,
+				})
+			: undefined;
+	links = switcherLinks({
+		locales: i18n.locales,
+		currentLocale: Astro.currentLocale ?? i18n.defaultLocale,
+		alternates,
+		homeHref: (locale) => getRelativeLocaleUrl(locale),
+		labels,
+	});
+}
+---
+
+{
+	links.length > 1 && (
+		<nav aria-label={label} class={className}>
+			<ul>
+				{links.map((link) => (
+					<li>
+						<a
+							href={link.href}
+							hreflang={link.locale}
+							lang={link.locale}
+							aria-current={link.current ? "page" : undefined}
+							data-translated={link.translated ? undefined : "false"}
+						>
+							{link.label}
+						</a>
+					</li>
+				))}
+			</ul>
+		</nav>
+	)
+}

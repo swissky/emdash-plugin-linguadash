@@ -12,9 +12,11 @@
 	"include": [
 		"src/**/*",
 		"tests/**/*",
-		"vitest.config.ts"
+		"vitest.config.ts",
+		"astro/**/*.ts"
 	],
 	"exclude": [
-		"node_modules"
+		"node_modules",
+		"astro/index.ts"
 	]
 }
