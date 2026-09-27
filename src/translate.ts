@@ -265,10 +265,9 @@ export async function translateSegments(
 ): Promise<string[]> {
 	if (!ctx.http) throw new ProviderError("LinguaDash needs the network:request capability");
 	const call = config.provider === "deepl" ? callDeepl : callChat;
-	const out: string[] = [];
-	for (let i = 0; i < segments.length; i += BATCH_SIZE) {
-		// oxlint-disable-next-line no-await-in-loop -- providers rate-limit parallel requests
-		out.push(...(await call(ctx, config, segments.slice(i, i + BATCH_SIZE), from, to)));
-	}
-	return out;
+	const batches: string[][] = [];
+	for (let i = 0; i < segments.length; i += BATCH_SIZE) batches.push(segments.slice(i, i + BATCH_SIZE));
+	// Parallel, because the sandbox ends a plugin request after 30 seconds.
+	const results = await Promise.all(batches.map((batch) => call(ctx, config, batch, from, to)));
+	return results.flat();
 }

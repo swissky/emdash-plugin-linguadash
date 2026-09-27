@@ -3,7 +3,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Block, BlockResponse } from "@emdash-cms/blocks";
 import { createPluginRuntimeTestHost, type PluginRuntimeTestHost } from "@emdash-cms/plugin-test";
 
-import { applyTranslations, collectSegments, deeplTargetLang } from "../src/translate.js";
+import type { PluginContext } from "emdash/plugin";
+
+import { applyTranslations, collectSegments, deeplTargetLang, translateSegments } from "../src/translate.js";
 
 const body = [
 	{
@@ -54,6 +56,21 @@ describe("segments for machine translation", () => {
 		const result = applyTranslations(plans, ["Fromage", "Fromage &lt;Boutique&gt;"], { title: "Käse" }, seo);
 		expect(result.data).toEqual({ title: "Fromage" });
 		expect(result.seo).toEqual({ title: "Fromage <Boutique>", description: "", image: "media-1" });
+	});
+
+	it("keeps segment order when later batches answer first", async () => {
+		const segments = Array.from({ length: 120 }, (_, i) => `t${i}`);
+		let delay = 30;
+		const http = {
+			fetch: async (_url: string, init: RequestInit) => {
+				const { text } = JSON.parse(String(init.body)) as { text: string[] };
+				await new Promise((resolve) => setTimeout(resolve, (delay -= 10)));
+				return deeplResponse(text.map((t) => t.toUpperCase()));
+			},
+		};
+		const config = { provider: "deepl", apiKey: "k:fx", model: "", formality: "default", instructions: "" } as const;
+		const out = await translateSegments({ http } as unknown as PluginContext, config, segments, "de", "fr");
+		expect(out).toEqual(segments.map((t) => t.toUpperCase()));
 	});
 
 	it("maps locales to DeepL target codes", () => {
@@ -150,6 +167,9 @@ describe("machine translation in the panel", () => {
 		await host.actions.content.update("posts", source.id, { data: { title: "Hallo neue Welt" } });
 		const stale = await host.admin.loadEditorPanel("translations", "posts", fr.id);
 		expect(lines(stale)).toContain("French (this entry) · Outdated · Retranslate");
+		const retranslate = stale.blocks.find((block) => block.type === "section" && block.accessory?.type === "button");
+		expect(retranslate?.type === "section" && retranslate.accessory?.type === "button" && retranslate.accessory.confirm)
+			.toMatchObject({ confirm: "Retranslate", style: "danger" });
 		await host.http.respond(
 			"https://api-free.deepl.com/v2/translate",
 			deeplResponse(["Bonjour le nouveau monde", 'Bonjour <s i="1">monde</s>']),

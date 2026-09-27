@@ -268,6 +268,11 @@ describe("translations panel", () => {
 		const fr = (await host.inspect.content.list("posts")).find((item) => item.locale === "fr");
 		expect(fr?.translationGroup).toBe(source.translationGroup ?? source.id);
 		expect(tabs(response)).toMatchObject({ "Missing (1)": ["Hallo · Italian"], "To review (1)": ["Hallo · French"] });
+
+		const all = await host.admin.act("/translations", menu!.action_id, { user: editor, value: menu!.items[2]!.value });
+		expect(all.toast).toMatchObject({ type: "success" });
+		expect((await host.inspect.content.list("posts")).map((row) => row.locale).sort()).toEqual(["de", "fr", "it"]);
+		expect(tabs(all)).toMatchObject({ "Missing (0)": [], "To review (2)": ["Hallo · French", "Hallo · Italian"] });
 	});
 
 	it("ignores a create request for a language that is not configured", async () => {

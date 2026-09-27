@@ -1,4 +1,4 @@
-import type { Block, BlockResponse } from "@emdash-cms/blocks";
+import type { Block, BlockResponse, ButtonElement } from "@emdash-cms/blocks";
 import type { PluginContext, PluginUiContext } from "emdash/plugin";
 
 import { uiFor, type Ui } from "./i18n.js";
@@ -170,7 +170,7 @@ function render(state: State, entry: Entry, ui: Ui): Block[] {
 		label: string,
 		locale: string,
 		style: "primary" | "danger" | "secondary",
-	): Accessory => ({ type: "button", action_id, label, value: locale, style });
+	): ButtonElement => ({ type: "button", action_id, label, value: locale, style });
 	for (const locale of state.locales) {
 		if (locale === state.sourceLocale) continue;
 		const row = state.byLocale.get(locale);
@@ -187,7 +187,18 @@ function render(state: State, entry: Entry, ui: Ui): Block[] {
 			const status = state.statuses.get(statusId(entry.collection, row.id));
 			if (status && state.sourceHash !== null && status.sourceHash !== state.sourceHash) {
 				label = m.outdated;
-				if (machine) accessory = button("machine", m.retranslate, locale, "danger");
+				if (machine) {
+					accessory = {
+						...button("machine", m.retranslate, locale, "danger"),
+						confirm: {
+							title: m.retranslateTitle(ui.language(locale)),
+							text: m.retranslateText,
+							confirm: m.retranslate,
+							deny: m.cancel,
+							style: "danger",
+						},
+					};
+				}
 			} else if (row.status === "published") {
 				label = m.done;
 			} else {

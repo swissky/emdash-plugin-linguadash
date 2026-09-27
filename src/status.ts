@@ -346,17 +346,15 @@ export async function translateMissing(ctx: PluginContext, ui: Ui, value: unknow
 	const sourceLocale = await resolveSourceLocale(ctx);
 	const locales = locale === ALL_LOCALES ? await resolveTargetLocales(ctx, sourceLocale) : [locale];
 	const entry = { collection, id, locale: sourceLocale };
-	const done: { locale: string; result: "machine" | "created" }[] = [];
-	try {
-		for (const target of locales) {
-			// oxlint-disable-next-line no-await-in-loop -- each translation reloads the group the previous one changed
-			const result = await addTranslation(ctx, entry, target);
-			if (result) done.push({ locale: target, result });
-		}
-	} catch (error) {
-		ctx.log.error("translation from the overview failed", { collection, id, locale, error: String(error) });
-		return { type: "error", message: failureMessage(ui, error) };
+	const outcomes = await Promise.allSettled(locales.map((target) => addTranslation(ctx, entry, target)));
+	const failed = outcomes.find((outcome) => outcome.status === "rejected");
+	if (failed) {
+		ctx.log.error("translation from the overview failed", { collection, id, locale, error: String(failed.reason) });
+		return { type: "error", message: failureMessage(ui, failed.reason) };
 	}
+	const done = outcomes.flatMap((outcome, index) =>
+		outcome.status === "fulfilled" && outcome.value ? [{ locale: locales[index]!, result: outcome.value }] : [],
+	);
 	if (done.length === 0) return { type: "info", message: ui.m.nothingToDo };
 	const machine = done.some((item) => item.result === "machine");
 	if (done.length > 1) {
