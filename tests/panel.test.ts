@@ -1,20 +1,50 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import type { BlockResponse } from "@emdash-cms/blocks";
+import type { Block, BlockResponse, MenuElement } from "@emdash-cms/blocks";
 import { createPluginRuntimeTestHost, type PluginRuntimeTestHost } from "@emdash-cms/plugin-test";
 
 import { statusId, type TranslationStatus } from "../src/panel.js";
 
 let host: PluginRuntimeTestHost;
 
+type Blocks = BlockResponse["blocks"];
+
+function overview(response: BlockResponse): Blocks {
+	const tab = response.blocks.find((block) => block.type === "tab");
+	return tab?.type === "tab" ? tab.panels[0]!.blocks : response.blocks;
+}
+
+/** Section lines of the panel, or "title · languages" rows of the overview tables when given a page. */
 function lines(response: BlockResponse): string[] {
-	return response.blocks.flatMap((block) => (block.type === "section" ? [block.text] : []));
+	return rows(overview(response)).concat(
+		overview(response).flatMap((block) => (block.type === "section" ? [withButton(block)] : [])),
+	);
+}
+
+/** A panel line as the editor sees it: the language, then the label of its button. */
+function withButton(block: Extract<Block, { type: "section" }>): string {
+	return block.accessory?.type === "button" ? `${block.text} · ${block.accessory.label}` : block.text;
+}
+
+function rows(blocks: Blocks): string[] {
+	return blocks.flatMap((block) =>
+		block.type === "table" ? block.rows.map((row) => `${String(row.title)} · ${String(row.languages)}`) : [],
+	);
+}
+
+/** The overview's tabs by label, each with its "title · languages" rows in sorted order. */
+function tabs(response: BlockResponse): Record<string, string[]> {
+	const tab = response.blocks.find((block) => block.type === "tab");
+	const panels = tab?.type === "tab" ? tab.panels.filter((panel) => panel.label !== "Settings") : [];
+	return Object.fromEntries(
+		panels.map((panel) => [panel.label, rows(panel.blocks).sort()]),
+	);
 }
 
 function buttons(response: BlockResponse): string[] {
 	return response.blocks.flatMap((block) =>
-		block.type === "actions"
-			? block.elements.flatMap((el) => (el.type === "button" ? [`${el.action_id}:${String(el.value)}`] : []))
+		block.type === "section" && block.accessory?.type === "button"
+			? [`${block.accessory.action_id}:${String(block.accessory.value)}`]
 			: [],
 	);
 }
@@ -61,18 +91,15 @@ describe("translations panel", () => {
 		});
 
 		const initial = await host.admin.loadEditorPanel("translations", "posts", source.id);
-		expect(lines(initial)).toEqual([
-			"DE (this entry) — Source · draft",
-			"FR — Not translated",
-			"IT — Not translated",
-		]);
+		expect(lines(initial)).toEqual(["French · Missing · Create draft", "Italian · Missing · Create draft"]);
 		expect(buttons(initial)).toEqual(["create:fr", "create:it"]);
 
 		const created = await host.admin.actEditorPanel("translations", "posts", source.id, "create", {
 			value: "fr",
 		});
 		expect(created.toast?.type).toBe("success");
-		expect(lines(created)).toContain("FR — draft · Needs translation");
+		expect(lines(created)).toContain("French · Draft");
+		expect(created.blocks.some((block) => block.type === "section" && block.accessory?.type === "link")).toBe(false);
 
 		const rows = await host.inspect.content.list("posts");
 		const fr = rows.find((row) => row.locale === "fr");
@@ -84,7 +111,7 @@ describe("translations panel", () => {
 		});
 	});
 
-	it("marks a translation done and flags it as outdated when the source changes", async () => {
+	it("shows a translation as done once published and as outdated when the source changes", async () => {
 		const source = await host.fixtures.content("posts", {
 			slug: "hallo-welt",
 			locale: "de",
@@ -93,16 +120,29 @@ describe("translations panel", () => {
 		await host.admin.actEditorPanel("translations", "posts", source.id, "create", { value: "fr" });
 		const fr = (await host.inspect.content.list("posts")).find((row) => row.locale === "fr")!;
 
-		const done = await host.admin.actEditorPanel("translations", "posts", fr.id, "mark-translated", {
-			value: "fr",
-		});
-		expect(lines(done)).toContain("FR (this entry) — draft · Translated");
-		expect(buttons(done)).not.toContain("mark-translated:fr");
+		await host.actions.content.publish("posts", fr.id);
+		await until(async () => (await storedStatus(fr.id))?.state === "translated");
+		const done = await host.admin.loadEditorPanel("translations", "posts", fr.id);
+		expect(lines(done)).toContain("French (this entry) · Done ✓");
+		expect(buttons(done)).toEqual(["create:it"]);
 
 		await host.actions.content.update("posts", source.id, { data: { title: "Hallo neue Welt" } });
 		const afterEdit = await host.admin.loadEditorPanel("translations", "posts", fr.id);
-		expect(lines(afterEdit)).toContain("FR (this entry) — draft · Outdated: source changed");
-		expect(buttons(afterEdit)).toContain("mark-translated:fr");
+		expect(lines(afterEdit)).toContain("French (this entry) · Outdated");
+		expect(buttons(afterEdit)).toEqual(["create:it"]);
+	});
+
+	it("shows a translation published before LinguaDash as done", async () => {
+		const source = await host.fixtures.content("posts", { slug: "hallo", locale: "de", data: { title: "Hallo" } });
+		const fr = await host.fixtures.content("posts", {
+			slug: "salut",
+			locale: "fr",
+			status: "published",
+			translationOf: source.id,
+			data: { title: "Salut" },
+		});
+		const panel = await host.admin.loadEditorPanel("translations", "posts", fr.id);
+		expect(lines(panel)).toContain("French (this entry) · Done ✓");
 	});
 
 	it("flags a translation as outdated when the source changes and clears it when the source is reverted", async () => {
@@ -114,16 +154,45 @@ describe("translations panel", () => {
 		});
 		await host.admin.actEditorPanel("translations", "posts", source.id, "create", { value: "fr" });
 		const fr = (await host.inspect.content.list("posts")).find((row) => row.locale === "fr")!;
-		await host.admin.actEditorPanel("translations", "posts", fr.id, "mark-translated", { value: "fr" });
+		await host.actions.content.publish("posts", fr.id);
+		await until(async () => (await storedStatus(fr.id))?.state === "translated");
 		const outdated = () => storedStatus(fr.id).then((status) => status?.outdated);
 
 		await host.actions.content.update("posts", source.id, { data: { title: "Hallo neue Welt" } });
 		await until(async () => (await outdated()) === true);
-		expect(lines(await host.admin.loadPage("/translations"))).toEqual(["Hallo Welt — posts · FR"]);
+		const stale = await host.admin.loadPage("/translations");
+		expect(tabs(stale)).toEqual({
+			"Missing (0)": [],
+			"Outdated (1)": ["Hallo Welt · French"],
+			"To review (0)": [],
+		});
+		expect(stale.blocks.find((block) => block.type === "tab")).toMatchObject({ default_tab: 1 });
 
 		await host.actions.content.update("posts", source.id, { data: { title: "Hallo Welt" } });
 		await until(async () => (await outdated()) === false);
-		expect(lines(await host.admin.loadPage("/translations"))).toEqual([]);
+		expect(tabs(await host.admin.loadPage("/translations"))).toEqual({
+			"Missing (0)": [],
+			"Outdated (0)": [],
+			"To review (0)": [],
+		});
+	});
+
+	it("counts publishing a translation as bringing it up to date", async () => {
+		await host.fixtures.plugin.setting("targetLocales", "fr");
+		const source = await host.fixtures.content("posts", { slug: "hallo", locale: "de", data: { title: "Hallo" } });
+		await host.admin.actEditorPanel("translations", "posts", source.id, "create", { value: "fr" });
+		const fr = (await host.inspect.content.list("posts")).find((row) => row.locale === "fr")!;
+		expect(tabs(await host.admin.loadPage("/translations"))).toMatchObject({ "To review (1)": ["Hallo · French"] });
+
+		await host.actions.content.publish("posts", fr.id);
+		await until(async () => (await storedStatus(fr.id))?.state === "translated");
+		expect(tabs(await host.admin.loadPage("/translations"))).toMatchObject({ "To review (0)": [], "Outdated (0)": [] });
+
+		await host.actions.content.update("posts", source.id, { data: { title: "Hallo neu" } });
+		await until(async () => (await storedStatus(fr.id))?.outdated === true);
+		await host.actions.content.publish("posts", fr.id);
+		await until(async () => (await storedStatus(fr.id))?.outdated === false);
+		expect(tabs(await host.admin.loadPage("/translations"))).toMatchObject({ "To review (0)": [], "Outdated (0)": [] });
 	});
 
 	it("lists untranslated copies on the overview under their latest title", async () => {
@@ -135,15 +204,18 @@ describe("translations panel", () => {
 		await host.actions.content.update("posts", fr.id, { data: { title: "Bonjour" } });
 		await until(async () => (await storedStatus(fr.id))?.title === "Bonjour");
 
-		const page = await host.admin.loadPage("/translations");
-		expect(page.blocks.find((block) => block.type === "stats")).toMatchObject({
-			items: [{ value: 0 }, { value: 0 }, { value: 1 }, { value: 0 }],
+		expect(tabs(await host.admin.loadPage("/translations"))).toEqual({
+			"Missing (0)": [],
+			"Outdated (0)": [],
+			"To review (1)": ["Bonjour · French"],
 		});
-		expect(lines(page)).toEqual(["Bonjour — posts · FR"]);
 
 		await host.actions.content.trash("posts", fr.id);
 		await until(async () => (await storedStatus(fr.id)) === null);
-		expect(lines(await host.admin.loadPage("/translations"))).toEqual(["Hallo — posts · FR"]);
+		expect(tabs(await host.admin.loadPage("/translations"))).toMatchObject({
+			"Missing (1)": ["Hallo · French"],
+			"To review (0)": [],
+		});
 	});
 
 	it("lists source entries by the target languages they have no entry in", async () => {
@@ -152,11 +224,50 @@ describe("translations panel", () => {
 		await host.fixtures.content("posts", { slug: "hello", locale: "en", data: { title: "Hello" } });
 		await host.admin.actEditorPanel("translations", "posts", hallo.id, "create", { value: "fr" });
 
-		const page = await host.admin.loadPage("/translations");
-		expect(page.blocks.find((block) => block.type === "stats")).toMatchObject({
-			items: [{ value: 3 }, { value: 0 }, { value: 1 }, { value: 0 }],
+		expect(tabs(await host.admin.loadPage("/translations"))).toEqual({
+			"Missing (3)": ["Hallo · Italian", "Tschüss · French, Italian"],
+			"Outdated (0)": [],
+			"To review (1)": ["Hallo · French"],
 		});
-		expect(lines(page).sort()).toEqual(["Hallo — posts · FR", "Hallo — posts · IT", "Tschüss — posts · FR, IT"]);
+	});
+
+	it("counts translations created outside LinguaDash as not reviewed on the overview", async () => {
+		const source = await host.fixtures.content("posts", { slug: "hallo", locale: "de", data: { title: "Hallo" } });
+		const salut = await host.fixtures.content("posts", {
+			slug: "salut",
+			locale: "fr",
+			translationOf: source.id,
+			data: { title: "Salut" },
+		});
+
+		expect(tabs(await host.admin.loadPage("/translations"))).toEqual({
+			"Missing (1)": ["Hallo · Italian"],
+			"Outdated (0)": [],
+			"To review (1)": ["Salut · French"],
+		});
+
+		await host.actions.content.publish("posts", salut.id);
+		await until(async () => (await storedStatus(salut.id))?.state === "translated");
+		expect(tabs(await host.admin.loadPage("/translations"))).toMatchObject({ "To review (0)": [], "Outdated (0)": [] });
+	});
+
+	it("adds a missing language picked from the row's menu", async () => {
+		const editor = await host.fixtures.user({ email: "editor@example.com", role: "editor" });
+		const source = await host.fixtures.content("posts", { slug: "hallo", locale: "de", data: { title: "Hallo" } });
+
+		const page = await host.admin.loadPage("/translations", { user: editor });
+		const table = overview(page).find((block) => block.type === "table");
+		const menu = (table?.type === "table" ? table.rows.find((row) => row.title === "Hallo")?.action : undefined) as
+			| MenuElement
+			| undefined;
+		expect(menu?.type).toBe("menu");
+		expect(menu!.items.map((item) => item.label)).toEqual(["French", "Italian", "All languages"]);
+
+		const response = await host.admin.act("/translations", menu!.action_id, { user: editor, value: menu!.items[0]!.value });
+		expect(response.toast).toMatchObject({ type: "success" });
+		const fr = (await host.inspect.content.list("posts")).find((item) => item.locale === "fr");
+		expect(fr?.translationGroup).toBe(source.translationGroup ?? source.id);
+		expect(tabs(response)).toMatchObject({ "Missing (1)": ["Hallo · Italian"], "To review (1)": ["Hallo · French"] });
 	});
 
 	it("ignores a create request for a language that is not configured", async () => {

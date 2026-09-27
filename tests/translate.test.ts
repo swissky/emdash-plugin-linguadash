@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import type { BlockResponse } from "@emdash-cms/blocks";
+import type { Block, BlockResponse } from "@emdash-cms/blocks";
 import { createPluginRuntimeTestHost, type PluginRuntimeTestHost } from "@emdash-cms/plugin-test";
 
 import { applyTranslations, collectSegments, deeplTargetLang } from "../src/translate.js";
@@ -63,14 +63,18 @@ describe("segments for machine translation", () => {
 
 let host: PluginRuntimeTestHost;
 
+function withButton(block: Extract<Block, { type: "section" }>): string {
+	return block.accessory?.type === "button" ? `${block.text} · ${block.accessory.label}` : block.text;
+}
+
 function lines(response: BlockResponse): string[] {
-	return response.blocks.flatMap((block) => (block.type === "section" ? [block.text] : []));
+	return response.blocks.flatMap((block) => (block.type === "section" ? [withButton(block)] : []));
 }
 
 function buttons(response: BlockResponse): string[] {
 	return response.blocks.flatMap((block) =>
-		block.type === "actions"
-			? block.elements.flatMap((el) => (el.type === "button" ? [`${el.action_id}:${String(el.value)}`] : []))
+		block.type === "section" && block.accessory?.type === "button"
+			? [`${block.accessory.action_id}:${String(block.accessory.value)}`]
 			: [],
 	);
 }
@@ -106,14 +110,14 @@ describe("machine translation in the panel", () => {
 		await host.dispose();
 	});
 
-	it("creates a machine-translated draft through DeepL and keeps it retranslatable until reviewed", async () => {
+	it("machine translates through DeepL, retranslates outdated drafts and leaves published translations alone", async () => {
 		const source = await host.fixtures.content("posts", {
 			slug: "hallo-welt",
 			locale: "de",
 			data: { title: "Hallo Welt", body },
 		});
 		const initial = await host.admin.loadEditorPanel("translations", "posts", source.id);
-		expect(buttons(initial)).toEqual(["machine:fr", "create:fr"]);
+		expect(buttons(initial)).toEqual(["machine:fr"]);
 
 		await host.http.respond(
 			"https://api-free.deepl.com/v2/translate",
@@ -121,7 +125,7 @@ describe("machine translation in the panel", () => {
 		);
 		const done = await host.admin.actEditorPanel("translations", "posts", source.id, "machine", { value: "fr" });
 		expect(done.toast?.type).toBe("success");
-		expect(lines(done)).toContain("FR — draft · Machine translated, needs review");
+		expect(lines(done)).toContain("French · Draft");
 
 		const [request] = host.http.requests();
 		expect(request!.headers.authorization).toBe("DeepL-Auth-Key secret-key:fx");
@@ -141,10 +145,28 @@ describe("machine translation in the panel", () => {
 			"monde",
 		]);
 
-		const reviewed = await host.admin.actEditorPanel("translations", "posts", fr.id, "mark-translated", {
+		expect(buttons(done)).toEqual([]);
+
+		await host.actions.content.update("posts", source.id, { data: { title: "Hallo neue Welt" } });
+		const stale = await host.admin.loadEditorPanel("translations", "posts", fr.id);
+		expect(lines(stale)).toContain("French (this entry) · Outdated · Retranslate");
+		await host.http.respond(
+			"https://api-free.deepl.com/v2/translate",
+			deeplResponse(["Bonjour le nouveau monde", 'Bonjour <s i="1">monde</s>']),
+		);
+		const retranslated = await host.admin.actEditorPanel("translations", "posts", fr.id, "machine", {
 			value: "fr",
 		});
-		expect(buttons(reviewed)).not.toContain("machine:fr");
+		expect(lines(retranslated)).toContain("French (this entry) · Draft");
+
+		await host.actions.content.publish("posts", fr.id);
+		await until(async () => (await host.inspect.storage.get<{ state: string }>("status", `posts:${fr.id}`))?.state === "translated");
+		await host.actions.content.update("posts", source.id, { data: { title: "Hallo Welt" } });
+		const published = await host.admin.loadEditorPanel("translations", "posts", fr.id);
+		expect(lines(published)).toContain("French (this entry) · Outdated");
+		const refused = await host.admin.actEditorPanel("translations", "posts", fr.id, "machine", { value: "fr" });
+		expect(refused.toast?.type).toBe("info");
+		expect(host.http.requests()).toHaveLength(2);
 	});
 
 	it("rejects a malformed Cloudflare account ID before sending anything", async () => {
@@ -201,6 +223,7 @@ describe("SEO and Cloudflare AI Gateway", () => {
 			cloudflareAccountId: accountId,
 			cloudflareApiToken: "cf-token",
 			cloudflareGatewayId: "linguadash",
+			instructions: "Keep the brand name Seeblick untranslated.",
 		});
 		expect(saved.success).toBe(true);
 	});
@@ -255,6 +278,7 @@ describe("SEO and Cloudflare AI Gateway", () => {
 		expect(request!.headers["cf-aig-gateway-id"]).toBe("linguadash");
 		const body = JSON.parse(new TextDecoder().decode(request!.body)) as { model: string; messages: { content: string }[] };
 		expect(body.model).toBe("@cf/meta/llama-3.3-70b-instruct-fp8-fast");
+		expect(body.messages[0]!.content).toContain("Keep the brand name Seeblick untranslated.");
 		expect(JSON.parse(body.messages[1]!.content).segments).toEqual([
 			"Angebot",
 			"Unser Angebot",
@@ -278,11 +302,11 @@ describe("SEO and Cloudflare AI Gateway", () => {
 		expect(seo).toMatchObject({ title: "Unser Angebot", image: "media-1", canonical: null });
 
 		const panel = async () => lines(await host.admin.loadEditorPanel("translations", "pages", id));
-		await host.admin.actEditorPanel("translations", "pages", id, "mark-translated", { value: "fr" });
-		expect(await panel()).toContain("FR (this entry) — draft · Translated");
+		await host.actions.content.publish("pages", id);
+		await until(async () => (await panel()).includes("French (this entry) · Done ✓"));
 
 		await host.actions.content.update("pages", source.id, { seo: { title: "Unser neues Angebot" } });
-		await until(async () => (await panel()).includes("FR (this entry) — draft · Outdated: source changed"));
+		await until(async () => (await panel()).includes("French (this entry) · Outdated"));
 		const status = await host.inspect.storage.get<{ outdated: boolean }>("status", `pages:${id}`);
 		expect(status?.outdated).toBe(true);
 	});

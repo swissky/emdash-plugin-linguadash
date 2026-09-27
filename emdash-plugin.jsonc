@@ -7,7 +7,7 @@
 	"license": "MIT",
 	"author": { "name": "swissky", "url": "https://github.com/swissky" },
 	"security": { "url": "https://github.com/swissky/emdash-plugin-linguadash/security/advisories/new" },
-	"description": "Multilingual content for EmDash: translate posts, pages and taxonomies manually or automatically with DeepL or GPT, and track translation status.",
+	"description": "Translate EmDash content, including SEO titles and descriptions, by hand or with DeepL, OpenAI or Cloudflare AI Gateway, and see which entries are missing, outdated or waiting for review.",
 	"repo": "https://github.com/swissky/emdash-plugin-linguadash",
 
 	// Trust contract — what runtime APIs the plugin asks for.
@@ -20,13 +20,8 @@
 	},
 
 	"admin": {
-		"pages": [{ "path": "/translations", "label": "Translations" }],
+		"pages": [{ "path": "/translations", "label": "Translations", "icon": "translate" }],
 		"settingsSchema": {
-			"sourceLocale": {
-				"type": "string",
-				"label": "Source language",
-				"description": "Locale code translations are made from, e.g. de. Leave empty to use the site's default locale."
-			},
 			"targetLocales": {
 				"type": "string",
 				"label": "Target languages",
@@ -35,7 +30,7 @@
 			"provider": {
 				"type": "select",
 				"label": "Machine translation",
-				"description": "Adds a translate button to the Translations panel. Machine translations are saved as drafts to review.",
+				"description": "Adds a translate button to the Translation status panel. Machine translations are saved as drafts to review.",
 				"options": [
 					{ "value": "none", "label": "Off" },
 					{ "value": "deepl", "label": "DeepL" },
@@ -82,14 +77,18 @@
 					{ "value": "less", "label": "Informal" }
 				],
 				"default": "default"
+			},
+			"instructions": {
+				"type": "string",
+				"label": "Instructions for the translation",
+				"description": "Optional guidance sent with every machine translation, such as spelling conventions or terms to keep untranslated."
 			}
 		},
 		"editorPanels": [
 			{
 				"id": "translations",
-				"title": "Translations",
-				"route": "editor/panel",
-				"collections": ["posts", "pages"]
+				"title": "Translation status",
+				"route": "editor/panel"
 			}
 		]
 	}

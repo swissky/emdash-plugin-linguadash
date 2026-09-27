@@ -1,33 +1,82 @@
-# linguadash
+# LinguaDash
 
-A sandboxed plugin for [EmDash CMS](https://emdashcms.com).
+Multilingual content for [EmDash CMS](https://emdashcms.com). LinguaDash shows which entries
+are missing a language, which translations are outdated and which still need review. Editors
+translate by hand or draft translations with DeepL, OpenAI or Cloudflare AI Gateway, including
+SEO titles and descriptions.
+
+## Requirements
+
+- EmDash 0.40 or later with a [plugin sandbox runner](https://docs.emdashcms.com/deployment/plugin-sandbox/).
+- [Astro i18n routing](https://docs.emdashcms.com/guides/internationalization) with every
+  language you translate into listed in `i18n.locales`.
+- For machine translation, an `EMDASH_ENCRYPTION_KEY` so API keys are stored encrypted.
+  Sites created with `create-emdash` have one; otherwise run `emdash secrets generate`.
+
+## Install
+
+Open **Registry** in the admin, search for LinguaDash and select **Install**. To manage the
+plugin as a dependency instead, install `emdash-plugin-linguadash` and add it to the
+`sandboxed` array:
+
+```js title="astro.config.mjs"
+import linguadash from "emdash-plugin-linguadash";
+
+emdash({ sandboxed: [linguadash] });
+```
+
+## Get started
+
+The **Translations** page walks through setup until both required steps are done:
+
+1. **Languages.** Open **Translation settings** and enter the target languages, e.g.
+   `fr, it, en`. The source language defaults to the site's default locale.
+2. **Translatable fields.** In **Content Types**, switch on **Translatable** for every field
+   that differs per language, such as the title and body. Fields that stay the same in every
+   language, like a price, stay untranslatable.
+3. **Machine translation (optional).** Pick a provider in **Translation settings**, enter its
+   credentials and select **Test machine translation** to check them with a sample sentence.
+
+Only administrators can change the settings. Saved API keys are never shown again; leave a key
+field empty to keep the stored key, or select **Remove saved API keys**.
 
 ## Translation status
 
-The **Translations** panel in the post and page editor lists every configured language. From
-there editors create a translation (a draft copy of the source's translatable fields) and mark it
-as translated once the text is done.
+The **Translation status** panel in the content editor lists every configured language with its
+status: **Missing**, **Draft**, **Done** once the translation is published, or **Outdated**. Nobody
+sets the status by hand. For a missing language, the panel offers a button that creates the
+translation (a draft copy of the source's translatable fields, or a machine translation when a
+provider is set up).
 
 Each translation records a fingerprint of the source's translatable fields. When the source is
-saved with different values, its translations are flagged **Outdated**; reverting the source
-clears the flag. The **Translations** admin page counts languages without an entry, outdated,
-untranslated and up-to-date translations, and links to the ones that need work. Missing languages
-are found by checking the first 100 entries of each collection with translatable fields.
+saved with different values, its translations are flagged **Outdated**; reverting the source, or
+publishing the translation again, clears the flag. Translations published before LinguaDash was
+installed count as done. The **Translations** admin page has a tab for each kind of open work, with its
+count: **Missing** (language versions that don't exist yet), **Outdated** and **To review**
+(translation drafts that aren't published yet). It opens on the
+first tab that has work. Missing languages are found by checking the first 100 entries of each
+collection with translatable fields.
 
 ## Machine translation
 
-Pick **DeepL**, **OpenAI (GPT)** or **Cloudflare AI Gateway** under **Machine translation** in the
-plugin settings and enter the matching credentials. DeepL Free keys ending in `:fx` use the Free
+Pick **DeepL**, **OpenAI (GPT)** or **Cloudflare AI Gateway** under **Machine translation** in
+**Translation settings** and enter the matching credentials. DeepL Free keys ending in `:fx` use the Free
 API. Cloudflare needs the account ID and an API token with the **Account > Workers AI > Read**
 permission. Requests go through the configured AI Gateway (`default` unless you change it), so
 gateway logging, caching and rate limits apply. The model can be a Workers AI model
 (`@cf/meta/llama-3.3-70b-instruct-fp8-fast` by default) or a third-party gateway model such as
 `openai/gpt-4.1-mini`, billed through Cloudflare Unified Billing. The panel then shows a
-**Translate with …** button for each language. It saves a draft with the translatable text and
-rich-text fields translated. Marks, links and embedded blocks stay in place. The translation
-counts as **Machine translated, needs review** until an editor marks it as translated. After
-that, the button no longer appears, so reviewed work is never overwritten. Text is sent only to the provider
+**Translate** button for each missing language. It saves a draft with the translatable text and
+rich-text fields translated. Marks, links and embedded blocks stay in place. While the
+translation is an unpublished draft and its source changes, the panel offers **Retranslate**.
+Once the translation is published, machine translation no longer touches it, so reviewed work is
+never overwritten. Text is sent only to the provider
 you choose (`api.deepl.com`, `api-free.deepl.com`, `api.openai.com` or `api.cloudflare.com`).
+
+**Instructions for the translation** (optional, up to 1000 characters) are sent with every
+request, for example "Use Swiss spelling (ss instead of ß)" or "Keep product names in English".
+OpenAI and Cloudflare models receive them as instructions. DeepL receives them as `context`, which
+guides word choice but is not followed like a rule.
 
 ## SEO per language
 
@@ -83,9 +132,8 @@ translation instead when one exists under a different slug. Built-in text covers
 German, French and Italian; other languages get English. Override the "not translated"
 text with `message` (placeholders `{requested}` and `{fallback}`) or the default slot.
 
-Fallback needs `emdash` with the locale fallback fix for
-[#1679](https://github.com/emdash-cms/emdash/issues/1679); until then `getEmDashEntry`
-returns no entry instead of the fallback, and the notice never shows.
+Fallback needs `emdash` 0.41.0 or later. In older versions `getEmDashEntry` returns no
+entry instead of the fallback, and the notice never shows.
 
 ## Develop
 
@@ -99,7 +147,7 @@ pnpm run build
 
 To test against a running EmDash site, run `pnpm run dev` in this
 directory (rebuilds on save) and `pnpm add file:../path/to/this`
-in the site. Then `import linguadash from "linguadash"` and pass
+in the site. Then `import linguadash from "emdash-plugin-linguadash"` and pass
 it into `emdash({ sandboxed: [linguadash] })`.
 
 `pnpm run test` builds the plugin and runs its tests through Worker Loader using

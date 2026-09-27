@@ -9,6 +9,8 @@ export interface ProviderConfig {
 	apiKey: string;
 	model: string;
 	formality: "default" | "more" | "less";
+	/** Site-specific guidance from the settings: DeepL receives it as `context`, chat models as instructions. */
+	instructions: string;
 	/** Cloudflare only. */
 	accountId?: string;
 	gatewayId?: string;
@@ -16,8 +18,8 @@ export interface ProviderConfig {
 
 export const PROVIDER_NAMES: Record<Provider, string> = {
 	deepl: "DeepL",
-	openai: "GPT",
-	cloudflare: "Cloudflare AI",
+	openai: "OpenAI",
+	cloudflare: "Cloudflare AI Gateway",
 };
 
 export const DEFAULT_CLOUDFLARE_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
@@ -27,21 +29,25 @@ export class ProviderError extends Error {
 }
 
 const BATCH_SIZE = 50;
-const ACCOUNT_ID = /^[0-9a-f]{32}$/i;
-const GATEWAY_ID = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
+export const ACCOUNT_ID = /^[0-9a-f]{32}$/i;
+export const GATEWAY_ID = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
 
 export async function readProviderConfig(ctx: PluginContext): Promise<ProviderConfig | null> {
 	const setting = async (key: string) => ((await ctx.settings.get<string>(key)) ?? "").trim();
-	const [provider, formality] = await Promise.all([setting("provider"), setting("formality")]);
+	const [provider, formality, instructions] = await Promise.all([
+		setting("provider"),
+		setting("formality"),
+		setting("instructions"),
+	]);
 	const tone = formality === "more" || formality === "less" ? formality : "default";
 	switch (provider) {
 		case "deepl": {
 			const apiKey = await setting("deeplApiKey");
-			return apiKey ? { provider, apiKey, model: "", formality: tone } : null;
+			return apiKey ? { provider, apiKey, model: "", formality: tone, instructions } : null;
 		}
 		case "openai": {
 			const [apiKey, model] = await Promise.all([setting("openaiApiKey"), setting("openaiModel")]);
-			return apiKey ? { provider, apiKey, model: model || "gpt-4.1-mini", formality: tone } : null;
+			return apiKey ? { provider, apiKey, model: model || "gpt-4.1-mini", formality: tone, instructions } : null;
 		}
 		case "cloudflare": {
 			const [apiKey, accountId, gatewayId, model] = await Promise.all([
@@ -56,6 +62,7 @@ export async function readProviderConfig(ctx: PluginContext): Promise<ProviderCo
 				apiKey,
 				model: model || DEFAULT_CLOUDFLARE_MODEL,
 				formality: tone,
+				instructions,
 				accountId,
 				gatewayId: gatewayId || "default",
 			};
@@ -168,6 +175,7 @@ async function callDeepl(ctx: PluginContext, config: ProviderConfig, texts: stri
 		tag_handling: "xml",
 	};
 	if (config.formality !== "default") body.formality = `prefer_${config.formality}`;
+	if (config.instructions) body.context = config.instructions;
 	const response = await ctx.http!.fetch(`https://${host}/v2/translate`, {
 		method: "POST",
 		headers: { Authorization: `DeepL-Auth-Key ${config.apiKey}`, "Content-Type": "application/json" },
@@ -223,6 +231,9 @@ async function callChat(ctx: PluginContext, config: ProviderConfig, texts: strin
 	const { url, headers, name } = chatEndpoint(config);
 	const tone =
 		config.formality === "more" ? " Use a formal tone." : config.formality === "less" ? " Use an informal tone." : "";
+	const instructions = config.instructions
+		? ` Follow these instructions from the site, unless they conflict with the rules above: ${config.instructions}`
+		: "";
 	const response = await ctx.http!.fetch(url, {
 		method: "POST",
 		headers,
@@ -231,7 +242,7 @@ async function callChat(ctx: PluginContext, config: ProviderConfig, texts: strin
 			// Not every model behind the gateway supports JSON mode; the prompt asks for JSON either way.
 			...(config.provider === "openai" ? { response_format: { type: "json_object" } } : {}),
 			messages: [
-				{ role: "system", content: OPENAI_PROMPT + tone },
+				{ role: "system", content: OPENAI_PROMPT + tone + instructions },
 				{ role: "user", content: JSON.stringify({ from, to, segments: texts }) },
 			],
 		}),

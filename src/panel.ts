@@ -1,11 +1,11 @@
 import type { Block, BlockResponse } from "@emdash-cms/blocks";
 import type { PluginContext, PluginUiContext } from "emdash/plugin";
 
+import { uiFor, type Ui } from "./i18n.js";
 import { SegmentMismatchError } from "./portable-text.js";
 import {
 	applyTranslations,
 	collectSegments,
-	PROVIDER_NAMES,
 	ProviderError,
 	readProviderConfig,
 	type SeoText,
@@ -25,7 +25,7 @@ export interface TranslationStatus {
 	sourceId: string;
 	/**
 	 * `copied` = created from the source and not yet translated; `machine` = machine translated
-	 * and not yet reviewed; `translated` = marked done.
+	 * and not yet published; `translated` = published, so machine translation no longer touches it.
 	 */
 	state: "copied" | "machine" | "translated";
 	/** Fingerprint of the source's translatable fields when the state was recorded. */
@@ -37,7 +37,7 @@ export interface TranslationStatus {
 	updatedAt: string;
 }
 
-type Entry = { collection: string; id: string; locale: string | null };
+export type Entry = { collection: string; id: string; locale: string | null };
 
 export function statusId(collection: string, entryId: string): string {
 	return `${collection}:${entryId}`;
@@ -57,8 +57,9 @@ export function entryTitle(data: Record<string, unknown>, fallback: string, titl
 	return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
 
+/** The site's default language; translations are always made from it. */
 export async function resolveSourceLocale(ctx: PluginContext): Promise<string> {
-	return parseLocales(await ctx.settings.get<string>("sourceLocale"))[0] ?? ctx.site.locale;
+	return ctx.site.locale.toLowerCase();
 }
 
 export async function resolveTargetLocales(ctx: PluginContext, sourceLocale: string): Promise<string[]> {
@@ -150,74 +151,53 @@ function canMachineTranslate(state: State, collection: string, locale: string): 
 
 type State = Awaited<ReturnType<typeof loadState>>;
 
-function describe(state: State, collection: string, locale: string, row: TranslationSummary | undefined) {
-	if (locale === state.sourceLocale) return row ? `Source · ${row.status}` : "Source · missing";
-	if (!row) return "Not translated";
-	const status = state.statuses.get(statusId(collection, row.id));
-	const outdated = status && state.sourceHash !== null && status.sourceHash !== state.sourceHash;
-	const progress =
-		status?.state === "translated"
-			? "Translated"
-			: status?.state === "copied"
-				? "Needs translation"
-				: status?.state === "machine"
-					? "Machine translated, needs review"
-					: "Not reviewed";
-	return `${row.status} · ${outdated ? "Outdated: source changed" : progress}`;
-}
+type Accessory = NonNullable<Extract<Block, { type: "section" }>["accessory"]>;
 
-function render(state: State, entry: Entry): Block[] {
+/**
+ * One line per target language with its status, which follows from the content itself: missing,
+ * draft, done once published, outdated once the source changes after that. A button appears only
+ * when LinguaDash can do the next step: create the translation, or machine translate it again.
+ */
+function render(state: State, entry: Entry, ui: Ui): Block[] {
+	const { m } = ui;
+	if (state.translatable.length === 0) return [{ type: "context", text: m.noTranslatableFields }];
 	const blocks: Block[] = [];
 	if (!state.source) {
-		blocks.push({
-			type: "banner",
-			variant: "alert",
-			description: `This entry has no ${state.sourceLocale.toUpperCase()} version to translate from.`,
-		});
+		blocks.push({ type: "banner", variant: "alert", description: m.noSource(ui.language(state.sourceLocale)) });
 	}
+	const button = (
+		action_id: string,
+		label: string,
+		locale: string,
+		style: "primary" | "danger" | "secondary",
+	): Accessory => ({ type: "button", action_id, label, value: locale, style });
 	for (const locale of state.locales) {
+		if (locale === state.sourceLocale) continue;
 		const row = state.byLocale.get(locale);
 		const current = row?.id === entry.id;
-		blocks.push({
-			type: "section",
-			text: `${locale.toUpperCase()}${current ? " (this entry)" : ""} — ${describe(state, entry.collection, locale, row)}`,
-		});
-		const elements: Extract<Block, { type: "actions" }>["elements"] = [];
-		if (row && !current) {
-			elements.push({
-				type: "link",
-				label: "Open",
-				target: { kind: "content", collection: entry.collection, id: row.id, locale },
-			});
-		}
-		if (canMachineTranslate(state, entry.collection, locale)) {
-			const name = PROVIDER_NAMES[state.provider!.provider];
-			elements.push({
-				type: "button",
-				action_id: "machine",
-				label: row ? `Retranslate with ${name}` : `Translate with ${name}`,
-				value: locale,
-				style: "primary",
-			});
-		}
-		if (!row && state.source && state.targetLocales.includes(locale)) {
-			elements.push({ type: "button", action_id: "create", label: "Create translation", value: locale });
-		}
-		if (row && locale !== state.sourceLocale && state.source) {
+		const name = current ? `${ui.language(locale)} (${m.thisEntry})` : ui.language(locale);
+		const machine = canMachineTranslate(state, entry.collection, locale);
+		let label: string;
+		let accessory: Accessory | undefined;
+		if (!row) {
+			label = m.missing;
+			if (machine) accessory = button("machine", m.translate, locale, "primary");
+			else if (state.source) accessory = button("create", m.createTranslation, locale, "primary");
+		} else {
 			const status = state.statuses.get(statusId(entry.collection, row.id));
-			if (status?.state !== "translated" || status.sourceHash !== state.sourceHash) {
-				elements.push({ type: "button", action_id: "mark-translated", label: "Mark as translated", value: locale });
+			if (status && state.sourceHash !== null && status.sourceHash !== state.sourceHash) {
+				label = m.outdated;
+				if (machine) accessory = button("machine", m.retranslate, locale, "danger");
+			} else if (row.status === "published") {
+				label = m.done;
+			} else {
+				label = m.draft;
+				if (machine && status?.state === "copied") accessory = button("machine", m.translate, locale, "primary");
 			}
 		}
-		if (elements.length > 0) blocks.push({ type: "actions", elements });
+		blocks.push({ type: "section", text: `${name} · ${label}`, ...(accessory && { accessory }) });
 	}
-	if (state.targetLocales.length === 0) {
-		blocks.push({ type: "context", text: "No target languages configured yet." });
-	}
-	blocks.push({
-		type: "actions",
-		elements: [{ type: "link", label: "Language settings", target: { kind: "plugin-settings" } }],
-	});
+	if (state.targetLocales.length === 0) blocks.push({ type: "context", text: m.noTargets });
 	return blocks;
 }
 
@@ -306,6 +286,41 @@ async function markTranslated(ctx: PluginContext, state: State, entry: Entry, lo
 	await ctx.storage.status!.put(statusId(entry.collection, row.id), status);
 }
 
+/** Publishing a translation marks it done, and up to date with the source as it is now. */
+export async function markPublished(ctx: PluginContext, collection: string, id: string, locale: string) {
+	const entry = { collection, id, locale };
+	const state = await loadState(ctx, entry);
+	if (!state.source || locale === state.sourceLocale || !state.targetLocales.includes(locale)) return;
+	const status = state.statuses.get(statusId(collection, id));
+	if (status?.state === "translated" && status.sourceHash === state.sourceHash) return;
+	await markTranslated(ctx, state, entry, locale);
+}
+
+export function failureMessage({ m }: Ui, error: unknown): string {
+	if (error instanceof ProviderError) return m.providerFailed(error.message);
+	if (error instanceof SegmentMismatchError) return m.formatChanged;
+	return m.actionFailed;
+}
+
+/**
+ * Adds the translation for one locale an entry has no row in yet: machine translated when a
+ * provider is set up, otherwise a copy of the source. Returns null when there is nothing to add.
+ */
+export async function addTranslation(
+	ctx: PluginContext,
+	entry: Entry,
+	locale: string,
+): Promise<"machine" | "created" | null> {
+	const state = await loadState(ctx, entry);
+	if (state.byLocale.has(locale) || !state.source || !state.targetLocales.includes(locale)) return null;
+	if (canMachineTranslate(state, entry.collection, locale)) {
+		await machineTranslate(ctx, state, entry, locale);
+		return "machine";
+	}
+	await createTranslation(ctx, state, entry, locale);
+	return "created";
+}
+
 function readAction(input: unknown): { action: string; locale: string } | null {
 	if (typeof input !== "object" || input === null) return null;
 	const { type, action_id, value } = input as Record<string, unknown>;
@@ -320,9 +335,11 @@ export async function handlePanel(
 ): Promise<BlockResponse> {
 	if (ui?.surface !== "content-editor-panel") return { blocks: [] };
 	const entry = ui.entry;
+	const text = uiFor(ui.locale);
+	const { m } = text;
 	let state = await loadState(ctx, entry);
 	const request = readAction(input);
-	if (!request) return { blocks: render(state, entry) };
+	if (!request) return { blocks: render(state, entry, text) };
 
 	const { action, locale } = request;
 	const exists = state.byLocale.has(locale);
@@ -331,35 +348,21 @@ export async function handlePanel(
 			await createTranslation(ctx, state, entry, locale);
 			state = await loadState(ctx, entry);
 			return {
-				blocks: render(state, entry),
-				toast: { type: "success", message: `${locale.toUpperCase()} draft created from the source` },
+				blocks: render(state, entry, text),
+				toast: { type: "success", message: m.created(text.language(locale)) },
 			};
 		}
 		if (action === "machine" && canMachineTranslate(state, entry.collection, locale)) {
 			await machineTranslate(ctx, state, entry, locale);
 			state = await loadState(ctx, entry);
 			return {
-				blocks: render(state, entry),
-				toast: { type: "success", message: `${locale.toUpperCase()} machine translated. Review it before publishing.` },
-			};
-		}
-		if (action === "mark-translated" && exists && locale !== state.sourceLocale && state.source) {
-			await markTranslated(ctx, state, entry, locale);
-			state = await loadState(ctx, entry);
-			return {
-				blocks: render(state, entry),
-				toast: { type: "success", message: `${locale.toUpperCase()} marked as translated` },
+				blocks: render(state, entry, text),
+				toast: { type: "success", message: m.machineDone(text.language(locale)) },
 			};
 		}
 	} catch (error) {
 		ctx.log.error("translation action failed", { action, locale, error: String(error) });
-		const message =
-			error instanceof ProviderError
-				? `${error.message}. Check the API key in the language settings.`
-				: error instanceof SegmentMismatchError
-					? "The translation service changed the formatting. Nothing was saved; try again."
-					: "The translation could not be updated. Try again.";
-		return { blocks: render(state, entry), toast: { type: "error", message } };
+		return { blocks: render(state, entry, text), toast: { type: "error", message: failureMessage(text, error) } };
 	}
-	return { blocks: render(state, entry), toast: { type: "info", message: "Nothing to do" } };
+	return { blocks: render(state, entry, text), toast: { type: "info", message: m.nothingToDo } };
 }
