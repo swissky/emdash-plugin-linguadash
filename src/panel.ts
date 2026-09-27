@@ -175,7 +175,7 @@ function render(state: State, entry: Entry, ui: Ui): Block[] {
 		if (locale === state.sourceLocale) continue;
 		const row = state.byLocale.get(locale);
 		const current = row?.id === entry.id;
-		const name = current ? `${ui.language(locale)} (${m.thisEntry})` : ui.language(locale);
+		const name = current ? `${ui.label(locale)} (${m.thisEntry})` : ui.label(locale);
 		const machine = canMachineTranslate(state, entry.collection, locale);
 		let label: string;
 		let accessory: Accessory | undefined;

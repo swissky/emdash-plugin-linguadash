@@ -1,7 +1,6 @@
 {
 	"name": "emdash-plugin-linguadash",
 	"version": "0.1.0",
-	"private": true,
 	"type": "module",
 	"packageManager": "pnpm@11.20.0",
 	"keywords": [
@@ -34,12 +33,13 @@
 		"test": "emdash-plugin validate && vitest run",
 		"bundle": "emdash-plugin bundle",
 		"login": "emdash-plugin login",
-		"publish": "emdash-plugin publish",
-		"release:setup": "emdash-plugin release setup"
+		"release:setup": "emdash-plugin release setup",
+		"registry:publish": "emdash-plugin publish",
+		"prepublishOnly": "emdash-plugin build"
 	},
 	"peerDependencies": {
 		"astro": ">=6.0.0",
-		"emdash": ">=0.40.0"
+		"emdash": ">=0.42.0"
 	},
 	"peerDependenciesMeta": {
 		"astro": {
@@ -47,11 +47,25 @@
 		}
 	},
 	"devDependencies": {
-		"@emdash-cms/blocks": "0.40.0",
+		"@emdash-cms/blocks": "link:../emdash-wt-blockkit/packages/blocks",
 		"@emdash-cms/plugin-cli": "0.12.0",
 		"@emdash-cms/plugin-test": "^0.2.2",
-		"emdash": "0.40.0",
+		"emdash": "0.41.0",
 		"typescript": "^5.9.0",
 		"vitest": "^4.1.0"
+	},
+	"description": "Translate EmDash content, including SEO titles and descriptions, by hand or with DeepL, OpenAI or Cloudflare AI Gateway, and see which entries are missing, outdated or waiting for review.",
+	"license": "MIT",
+	"author": {
+		"name": "Kevin Kyburz",
+		"url": "https://github.com/swissky"
+	},
+	"homepage": "https://linguadash.dev",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/swissky/emdash-plugin-linguadash.git"
+	},
+	"bugs": {
+		"url": "https://github.com/swissky/emdash-plugin-linguadash/issues"
 	}
 }

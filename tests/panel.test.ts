@@ -132,6 +132,17 @@ describe("translations panel", () => {
 		expect(buttons(afterEdit)).toEqual(["create:it"]);
 	});
 
+	it("capitalizes language names that start a line in a French admin", async () => {
+		const source = await host.fixtures.content("posts", {
+			slug: "hallo-welt",
+			locale: "de",
+			data: { title: "Hallo Welt", rating: 4 },
+		});
+
+		const panel = await host.admin.loadEditorPanel("translations", "posts", source.id, { locale: "fr" });
+		expect(lines(panel)).toEqual(["Français · Manquant · Créer un brouillon", "Italien · Manquant · Créer un brouillon"]);
+	});
+
 	it("shows a translation published before LinguaDash as done", async () => {
 		const source = await host.fixtures.content("posts", { slug: "hallo", locale: "de", data: { title: "Hallo" } });
 		const fr = await host.fixtures.content("posts", {

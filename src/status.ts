@@ -90,20 +90,17 @@ const entryKey = (item: WorkItem) => `${item.collection}|${item.id}`;
 
 type RowAction = ButtonElement | LinkElement | MenuElement;
 
-/** One language is added right away; several open a menu with each language and all of them. */
+/** A menu with each language, plus all of them when there are several, so every row looks the same. */
 function translateAction(ui: Ui, label: string) {
 	return (item: WorkItem): RowAction => {
 		const value = (locale: string) => `${locale}|${entryKey(item)}`;
-		if (item.locales.length === 1) {
-			return { type: "button", action_id: TRANSLATE_ACTION, label, value: value(item.locales[0]!) };
-		}
 		return {
 			type: "menu",
 			action_id: TRANSLATE_ACTION,
 			label,
 			items: [
-				...item.locales.map((locale) => ({ label: ui.language(locale), value: value(locale) })),
-				{ label: ui.m.allLanguages, value: value(ALL_LOCALES) },
+				...item.locales.map((locale) => ({ label: ui.label(locale), value: value(locale) })),
+				...(item.locales.length > 1 ? [{ label: ui.m.allLanguages, value: value(ALL_LOCALES) }] : []),
 			],
 		};
 	};
@@ -302,7 +299,7 @@ async function overview(
 	const intro: Block[] = [
 		{
 			type: "context",
-			text: m.summary(ui.language(sourceLocale), ui.languages(targetLocales), providerSummary(status, ui)),
+			text: m.summary(ui.label(sourceLocale), ui.languages(targetLocales), providerSummary(status, ui)),
 		},
 		...(admin && status.provider !== "none" && !status.providerReady ? [openSettings(ui)] : []),
 	];

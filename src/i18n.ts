@@ -222,18 +222,248 @@ const de: Messages = {
 	nothingToDo: "Nichts zu tun",
 	allLanguages: "Alle Sprachen",
 	createdMany: (count) => `${count} Entwürfe aus der Quelle angelegt`,
-	machineDoneMany: (count) => `${count} Sprachen maschinell übersetzt. Vor dem Veröffentlichen prüfen.`,
+	machineDoneMany: (count) => `${count} Sprachen maschinell übersetzt. Vor dem Publizieren prüfen.`,
 	providerFailed: (detail) => `${detail}. Prüfe den API-Schlüssel in den Einstellungen.`,
 	formatChanged: "Der Übersetzungsdienst hat die Formatierung verändert. Nichts wurde gespeichert; bitte erneut versuchen.",
 	actionFailed: "Die Übersetzung konnte nicht aktualisiert werden. Bitte erneut versuchen.",
 };
 
-const catalogs: Record<string, Messages> = { en, de };
+const fr: Messages = {
+	tabOverview: "État",
+	tabSettings: "Paramètres",
+	openSettings: "Ouvrir les paramètres",
+
+	setupTitle: "Configurer les traductions",
+	setupIntro:
+		"LinguaDash indique quels contenus existent dans quelle langue et aide à créer ceux qui manquent. Deux étapes sont nécessaires avant de commencer.",
+	stepLanguages: "Langues",
+	languagesDone: (source, targets) => `Langue source : ${source}. Langues cibles : ${targets}.`,
+	languagesTodo:
+		"Choisissez les langues cibles dans l’onglet Paramètres. Elles doivent aussi figurer dans les locales i18n d’astro.config.mjs.",
+	stepFields: "Champs traduisibles",
+	fieldsDone: (collections) => `Activés dans ${collections}.`,
+	fieldsTodo:
+		"Dans Types de contenu, ouvrez une collection et activez « Traduisible » pour chaque champ qui change selon la langue, par exemple le titre et le texte.",
+	stepMachine: "Traduction automatique (facultatif)",
+	machineOffHint:
+		"Désactivée. Avec une clé DeepL, OpenAI ou Cloudflare AI Gateway, les brouillons de traduction se créent automatiquement.",
+	machineOff: "Désactivée",
+	machineReady: (name) => `${name}, prêt`,
+	machineMissing: (name) => `${name} sélectionné, identifiants manquants`,
+	summary: (source, targets, machine) => `${source} → ${targets} · Traduction automatique : ${machine}`,
+
+	tabMissing: (count) => `Manquant (${count})`,
+	tabOutdated: (count) => `Obsolète (${count})`,
+	tabReview: (count) => `À relire (${count})`,
+	missingHint: "Versions linguistiques qui n’existent pas encore. Un brouillon est la première étape.",
+	outdatedHint: "La source a changé après leur publication. Mettez-les à jour et publiez-les à nouveau.",
+	reviewHint: "Brouillons de traduction pas encore publiés. Relisez-les et publiez-les.",
+	noneMissing: "Chaque contenu existe dans toutes les langues cibles.",
+	noneOutdated: "Aucune traduction n’est en retard sur sa source.",
+	noneReview: "Rien n’attend de relecture.",
+	showingFirst: (limit) => `Seuls les ${limit} premiers sont affichés.`,
+	partialScan: (limit) => `Seuls les ${limit} premiers contenus de chaque collection ont été vérifiés.`,
+	open: "Ouvrir",
+	columnMissing: "Langues manquantes",
+	columnLanguage: "Langue",
+	columnEntry: "Contenu",
+
+	adminOnly: "Seuls les administrateurs peuvent modifier les paramètres de traduction.",
+	sourceInfo: (language) =>
+		`Langue source : ${language}, la langue par défaut du site. Les traductions sont créées comme contenus distincts et restent des brouillons jusqu’à leur publication.`,
+	targetLabel: "Langues cibles",
+	addLanguage: "Ajouter une langue",
+	searchLanguage: "Rechercher une langue…",
+	remove: "Supprimer",
+	added: (language) => `Langue ajoutée : ${language}`,
+	removed: (language) => `Langue supprimée : ${language}`,
+	providerChoice: "Service",
+	targetHelp: "N’ajoutez que des langues qui figurent aussi, avec le même code, dans les locales i18n d’astro.config.mjs.",
+	providerLabel: "Traduction automatique",
+	providerOff: "Désactivée (traduire à la main)",
+	deeplKey: "Clé API DeepL (les clés Free se terminent par :fx)",
+	openaiKey: "Clé API OpenAI",
+	openaiModel: "Modèle OpenAI",
+	cfAccount: "ID du compte Cloudflare",
+	cfAccountPlaceholder: "32 caractères, visible dans la barre latérale du tableau de bord",
+	cfToken: "Jeton API Cloudflare (Account > Workers AI > Read)",
+	cfGateway: "ID de l’AI Gateway",
+	cfModel: "Modèle",
+	tone: "Ton",
+	toneDefault: "Par défaut",
+	toneFormal: "Formel (vous)",
+	toneInformal: "Informel (tu)",
+	instructions: "Consignes pour la traduction (facultatif)",
+	instructionsPlaceholder: "p. ex. Écrire septante et nonante. Garder les noms de produits en anglais.",
+	instructionsTooLong: (max) => `Les consignes ne doivent pas dépasser ${max} caractères.`,
+	save: "Enregistrer",
+	test: "Tester la traduction automatique",
+	forgetKeys: "Supprimer les clés API enregistrées",
+	forgetTitle: "Supprimer les clés API enregistrées ?",
+	forgetText: "La traduction automatique ne fonctionnera plus tant que vous n’aurez pas saisi une nouvelle clé.",
+	forgetConfirm: "Supprimer",
+	cancel: "Annuler",
+	notReadyTitle: (name) => `${name} est sélectionné, mais n’est pas prêt`,
+	notReadyText: "Saisissez les identifiants manquants. En attendant, aucun bouton de traduction n’apparaît.",
+	saved: "Paramètres enregistrés",
+	keysRemoved: "Clés API supprimées",
+	invalidLocale: (codes) => `Code de locale non valide : ${codes}. Utilisez des codes comme de, fr ou pt-br.`,
+	chooseProvider: "Choisissez une option de traduction automatique.",
+	badAccount: "L’ID du compte Cloudflare comporte 32 caractères hexadécimaux.",
+	badGateway: "L’ID de l’AI Gateway ne peut contenir que des lettres, des chiffres, - et _.",
+	needsEncryptionKey:
+		"Les clés API sont stockées chiffrées. Définissez EMDASH_ENCRYPTION_KEY sur le serveur (à générer avec `npx emdash secrets generate`), puis enregistrez à nouveau.",
+	testNeedsProvider: "Enregistrez d’abord un service et ses identifiants.",
+	testOk: (name, result, language) => `${name} fonctionne : « ${result} » (${language})`,
+
+	noTranslatableFields:
+		"Aucun champ de cette collection n’est marqué comme traduisible. Activez « Traduisible » pour ses champs dans Types de contenu afin de traduire les contenus.",
+	noSource: (language) => `Ce contenu n’a pas de version en ${language} qui puisse servir de source.`,
+	missing: "Manquant",
+	draft: "Brouillon",
+	done: "Terminé ✓",
+	outdated: "Obsolète",
+	translate: "Traduire",
+	retranslate: "Retraduire",
+	retranslateTitle: (language) => `Retraduire en ${language} ?`,
+	retranslateText: "Cela remplace le brouillon actuel, y compris les modifications faites à la main.",
+	thisEntry: "ce contenu",
+	translateWith: (name) => `Traduire avec ${name}`,
+	createTranslation: "Créer un brouillon",
+	noTargets: "Aucune langue cible choisie pour l’instant.",
+	created: (language) => `Brouillon en ${language} créé à partir de la source`,
+	machineDone: (language) => `Traduction automatique en ${language} terminée. À relire avant publication.`,
+	nothingToDo: "Rien à faire",
+	allLanguages: "Toutes les langues",
+	createdMany: (count) => `${count} brouillons créés à partir de la source`,
+	machineDoneMany: (count) => `${count} langues traduites automatiquement. À relire avant publication.`,
+	providerFailed: (detail) => `${detail}. Vérifiez la clé API dans les paramètres.`,
+	formatChanged: "Le service de traduction a modifié la mise en forme. Rien n’a été enregistré ; réessayez.",
+	actionFailed: "La traduction n’a pas pu être mise à jour. Réessayez.",
+};
+
+const es: Messages = {
+	tabOverview: "Estado",
+	tabSettings: "Ajustes",
+	openSettings: "Abrir ajustes",
+
+	setupTitle: "Configurar traducciones",
+	setupIntro:
+		"LinguaDash muestra qué entradas existen en cada idioma y ayuda a crear las que faltan. Antes de empezar hacen falta dos pasos.",
+	stepLanguages: "Idiomas",
+	languagesDone: (source, targets) => `Idioma de origen: ${source}. Idiomas de destino: ${targets}.`,
+	languagesTodo:
+		"Elige los idiomas de destino en la pestaña Ajustes. También deben figurar en los locales i18n de astro.config.mjs.",
+	stepFields: "Campos traducibles",
+	fieldsDone: (collections) => `Activado en ${collections}.`,
+	fieldsTodo:
+		"En Tipos de contenido, abre una colección y activa «Traducible» en cada campo que cambie según el idioma, como el título y el texto.",
+	stepMachine: "Traducción automática (opcional)",
+	machineOffHint:
+		"Desactivada. Con una clave de DeepL, OpenAI o Cloudflare AI Gateway, los borradores de traducción se crean automáticamente.",
+	machineOff: "Desactivada",
+	machineReady: (name) => `${name}, listo`,
+	machineMissing: (name) => `${name} seleccionado, faltan credenciales`,
+	summary: (source, targets, machine) => `${source} → ${targets} · Traducción automática: ${machine}`,
+
+	tabMissing: (count) => `Falta (${count})`,
+	tabOutdated: (count) => `Desactualizado (${count})`,
+	tabReview: (count) => `Por revisar (${count})`,
+	missingHint: "Versiones de idioma que aún no existen. Un borrador es el primer paso.",
+	outdatedHint: "La fuente cambió después de publicarlas. Actualízalas y vuelve a publicarlas.",
+	reviewHint: "Borradores de traducción aún sin publicar. Revísalos y publícalos.",
+	noneMissing: "Cada entrada existe en todos los idiomas de destino.",
+	noneOutdated: "Ninguna traducción va por detrás de su fuente.",
+	noneReview: "No hay nada pendiente de revisión.",
+	showingFirst: (limit) => `Se muestran los primeros ${limit}.`,
+	partialScan: (limit) => `Solo se comprobaron las primeras ${limit} entradas de cada colección.`,
+	open: "Abrir",
+	columnMissing: "Idiomas que faltan",
+	columnLanguage: "Idioma",
+	columnEntry: "Entrada",
+
+	adminOnly: "Solo los administradores pueden cambiar los ajustes de traducción.",
+	sourceInfo: (language) =>
+		`Idioma de origen: ${language}, el idioma predeterminado del sitio. Las traducciones se crean como entradas propias y siguen siendo borradores hasta que las publiques.`,
+	targetLabel: "Idiomas de destino",
+	addLanguage: "Añadir un idioma",
+	searchLanguage: "Buscar idioma…",
+	remove: "Eliminar",
+	added: (language) => `Idioma añadido: ${language}`,
+	removed: (language) => `Idioma eliminado: ${language}`,
+	providerChoice: "Servicio",
+	targetHelp: "Añade solo idiomas que también figuren, con el mismo código, en los locales i18n de astro.config.mjs.",
+	providerLabel: "Traducción automática",
+	providerOff: "Desactivada (traducir a mano)",
+	deeplKey: "Clave API de DeepL (las claves Free terminan en :fx)",
+	openaiKey: "Clave API de OpenAI",
+	openaiModel: "Modelo de OpenAI",
+	cfAccount: "ID de cuenta de Cloudflare",
+	cfAccountPlaceholder: "32 caracteres, en la barra lateral del panel",
+	cfToken: "Token API de Cloudflare (Account > Workers AI > Read)",
+	cfGateway: "ID de AI Gateway",
+	cfModel: "Modelo",
+	tone: "Tratamiento",
+	toneDefault: "Predeterminado",
+	toneFormal: "Formal (usted)",
+	toneInformal: "Informal (tú)",
+	instructions: "Indicaciones para la traducción (opcional)",
+	instructionsPlaceholder: "p. ej. Usar español de España. Dejar los nombres de productos en inglés.",
+	instructionsTooLong: (max) => `Las indicaciones no pueden superar los ${max} caracteres.`,
+	save: "Guardar",
+	test: "Probar la traducción automática",
+	forgetKeys: "Eliminar las claves API guardadas",
+	forgetTitle: "¿Eliminar las claves API guardadas?",
+	forgetText: "La traducción automática dejará de funcionar hasta que introduzcas una clave de nuevo.",
+	forgetConfirm: "Eliminar",
+	cancel: "Cancelar",
+	notReadyTitle: (name) => `${name} está seleccionado, pero no está listo`,
+	notReadyText: "Introduce las credenciales que faltan. Hasta entonces no aparece ningún botón de traducir.",
+	saved: "Ajustes guardados",
+	keysRemoved: "Claves API eliminadas",
+	invalidLocale: (codes) => `Código de locale no válido: ${codes}. Usa códigos como de, fr o pt-br.`,
+	chooseProvider: "Elige una opción de traducción automática.",
+	badAccount: "El ID de cuenta de Cloudflare tiene 32 caracteres hexadecimales.",
+	badGateway: "El ID de AI Gateway solo puede contener letras, dígitos, - y _.",
+	needsEncryptionKey:
+		"Las claves API se guardan cifradas. Define EMDASH_ENCRYPTION_KEY en el servidor (genérala con `npx emdash secrets generate`) y vuelve a guardar.",
+	testNeedsProvider: "Guarda primero un servicio y sus credenciales.",
+	testOk: (name, result, language) => `${name} funciona: «${result}» (${language})`,
+
+	noTranslatableFields:
+		"Ningún campo de esta colección está marcado como traducible. Activa «Traducible» en sus campos desde Tipos de contenido para poder traducir entradas.",
+	noSource: (language) => `Esta entrada no tiene versión en ${language} desde la que traducir.`,
+	missing: "Falta",
+	draft: "Borrador",
+	done: "Listo ✓",
+	outdated: "Desactualizado",
+	translate: "Traducir",
+	retranslate: "Volver a traducir",
+	retranslateTitle: (language) => `¿Volver a traducir al ${language}?`,
+	retranslateText: "Esto sustituye el borrador actual, incluidos los cambios hechos a mano.",
+	thisEntry: "esta entrada",
+	translateWith: (name) => `Traducir con ${name}`,
+	createTranslation: "Crear borrador",
+	noTargets: "Aún no se han elegido idiomas de destino.",
+	created: (language) => `Borrador en ${language} creado a partir de la fuente`,
+	machineDone: (language) => `Traducción automática al ${language} lista. Revísala antes de publicar.`,
+	nothingToDo: "Nada que hacer",
+	allLanguages: "Todos los idiomas",
+	createdMany: (count) => `${count} borradores creados a partir de la fuente`,
+	machineDoneMany: (count) => `${count} idiomas traducidos automáticamente. Revísalos antes de publicar.`,
+	providerFailed: (detail) => `${detail}. Comprueba la clave API en los ajustes.`,
+	formatChanged: "El servicio de traducción cambió el formato. No se guardó nada; inténtalo de nuevo.",
+	actionFailed: "No se pudo actualizar la traducción. Inténtalo de nuevo.",
+};
+
+const catalogs: Record<string, Messages> = { en, de, fr, es };
 
 export interface Ui {
 	m: Messages;
 	/** Locale code as a language name in the admin language, e.g. "fr" → "Französisch". */
 	language: (code: string) => string;
+	/** The language name capitalized for use on its own, e.g. "en" → "Anglais" in French rather than "anglais". */
+	label: (code: string) => string;
 	languages: (codes: readonly string[]) => string;
 }
 
@@ -265,5 +495,9 @@ export function uiFor(locale: string | undefined): Ui {
 			return code.toUpperCase();
 		}
 	};
-	return { m, language, languages: (codes) => codes.map(language).join(", ") };
+	const label = (code: string) => {
+		const name = language(code);
+		return name.charAt(0).toUpperCase() + name.slice(1);
+	};
+	return { m, language, label, languages: (codes) => codes.map(language).join(", ") };
 }

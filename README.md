@@ -7,7 +7,7 @@ SEO titles and descriptions.
 
 ## Requirements
 
-- EmDash 0.40 or later with a [plugin sandbox runner](https://docs.emdashcms.com/deployment/plugin-sandbox/).
+- EmDash 0.42 or later with a [plugin sandbox runner](https://docs.emdashcms.com/deployment/plugin-sandbox/).
 - [Astro i18n routing](https://docs.emdashcms.com/guides/internationalization) with every
   language you translate into listed in `i18n.locales`.
 - For machine translation, an `EMDASH_ENCRYPTION_KEY` so API keys are stored encrypted.
@@ -129,7 +129,7 @@ translated have `data-translated="false"`. The component ships no styles.
 another locale: "This page isn't available in Italian yet. You're reading the German
 version." With `collection` and `entryId`, it links to the requested language's
 translation instead when one exists under a different slug. Built-in text covers English,
-German, French and Italian; other languages get English. Override the "not translated"
+German, French, Italian and Spanish; other languages get English. Override the "not translated"
 text with `message` (placeholders `{requested}` and `{fallback}`) or the default slot.
 
 Fallback needs `emdash` 0.41.0 or later. In older versions `getEmDashEntry` returns no
@@ -157,7 +157,7 @@ EmDash's production sandbox wrapper and host bridge.
 
 ```sh
 pnpm run login -- alice.example.com
-pnpm run publish          # builds and uploads artifacts to your PDS
+pnpm run registry:publish # builds and uploads artifacts to your PDS
 ```
 
 To publish from GitHub Actions, run `pnpm run release:setup`. The command

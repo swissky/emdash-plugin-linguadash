@@ -7,6 +7,19 @@
 	"license": "MIT",
 	"author": { "name": "swissky", "url": "https://github.com/swissky" },
 	"security": { "url": "https://github.com/swissky/emdash-plugin-linguadash/security/advisories/new" },
+	"name": "LinguaDash",
+	"keywords": ["translation", "multilingual", "i18n", "deepl", "seo"],
+	"sections": {
+		"description": { "file": "registry/description.md" },
+		"installation": { "file": "registry/installation.md" }
+	},
+	"release": {
+		"requires": { "env:emdash": ">=0.42.0" },
+		"artifacts": {
+			"icon": { "file": "icon.png" },
+			"screenshots": [{ "file": "assets/screenshot-status.png" }, { "file": "assets/screenshot-editor.png" }]
+		}
+	},
 	"description": "Translate EmDash content, including SEO titles and descriptions, by hand or with DeepL, OpenAI or Cloudflare AI Gateway, and see which entries are missing, outdated or waiting for review.",
 	"repo": "https://github.com/swissky/emdash-plugin-linguadash",
 

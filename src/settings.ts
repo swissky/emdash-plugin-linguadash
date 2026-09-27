@@ -92,7 +92,7 @@ export async function settingsBlocks(
 		value("cloudflareGatewayId"),
 		value("cloudflareModel"),
 	]);
-	const label = (code: string) => `${ui.language(code)} (${code})`;
+	const label = (code: string) => `${ui.label(code)} (${code})`;
 	const addable = LANGUAGES.filter((code) => code !== status.sourceLocale && !status.targetLocales.includes(code))
 		.map((code) => ({ value: code, label: label(code) }))
 		.sort((a, b) => a.label.localeCompare(b.label));

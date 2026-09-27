@@ -66,14 +66,14 @@ describe("nativeLanguageName", () => {
 describe("fallbackNotice", () => {
 	it("writes the notice in the requested language", () => {
 		expect(fallbackNotice("missing", "fr", "de")).toBe(
-			"Cette page n'est pas encore disponible en français. Vous lisez la version en allemand.",
+			"Cette page n’est pas encore disponible en français. Vous lisez la version en allemand.",
 		);
 		expect(fallbackNotice("missing", "de-CH", "en")).toContain("Angezeigt wird die Version auf Englisch.");
 	});
 
 	it("falls back to English for languages without built-in text", () => {
-		expect(fallbackNotice("missing", "es", "de")).toBe(
-			"This page isn't available in Spanish yet. You're reading the German version.",
+		expect(fallbackNotice("missing", "pt", "de")).toBe(
+			"This page isn't available in Portuguese yet. You're reading the German version.",
 		);
 	});
 

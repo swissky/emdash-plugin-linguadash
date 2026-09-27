@@ -63,14 +63,16 @@ const NOTICE_MESSAGES = {
 	missing: {
 		en: "This page isn't available in {requested} yet. You're reading the {fallback} version.",
 		de: "Diese Seite gibt es noch nicht auf {requested}. Angezeigt wird die Version auf {fallback}.",
-		fr: "Cette page n'est pas encore disponible en {requested}. Vous lisez la version en {fallback}.",
+		fr: "Cette page n’est pas encore disponible en {requested}. Vous lisez la version en {fallback}.",
 		it: "Questa pagina non è ancora disponibile in {requested}. Stai leggendo la versione in {fallback}.",
+		es: "Esta página aún no está disponible en {requested}. Estás leyendo la versión en {fallback}.",
 	},
 	available: {
 		en: "Read this page in {requested}.",
 		de: "Diese Seite auf {requested} lesen.",
 		fr: "Lire cette page en {requested}.",
 		it: "Leggi questa pagina in {requested}.",
+		es: "Lee esta página en {requested}.",
 	},
 } satisfies Record<string, Record<string, string>>;
 
