@@ -1,0 +1,57 @@
+name: "Publish to npm"
+
+on:
+  push:
+    tags:
+      - "linguadash@*"
+
+permissions:
+  contents: read
+  id-token: write # Required for npm trusted publishing and provenance.
+
+concurrency:
+  group: npm-publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: "Test and publish"
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Check out repository"
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: "Set up pnpm"
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 11
+
+      - name: "Set up Node.js"
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - name: "Install dependencies"
+        run: pnpm install --frozen-lockfile
+
+      - name: "Check tag matches package version"
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(node -p 'require("./package.json").version')"
+          if [ "${GITHUB_REF_NAME}" != "linguadash@${version}" ]; then
+            echo "::error title=Version mismatch::Tag ${GITHUB_REF_NAME} does not match package.json version ${version}."
+            exit 1
+          fi
+
+      - name: "Test"
+        run: |
+          pnpm typecheck
+          pnpm test
+
+      - name: "Publish"
+        run: npm publish --access public --provenance

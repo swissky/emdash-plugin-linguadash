@@ -155,13 +155,19 @@ EmDash's production sandbox wrapper and host bridge.
 
 ## Publish
 
+Releases are published from GitHub Actions. Bump `version` in `package.json`,
+commit, and push a matching tag:
+
 ```sh
-pnpm run login -- alice.example.com
-pnpm run registry:publish # builds and uploads artifacts to your PDS
+git tag linguadash@0.1.1
+git push origin linguadash@0.1.1
 ```
 
-To publish from GitHub Actions, run `pnpm run release:setup`. The command
-creates one shared workflow at the Git repository root.
+The tag starts two workflows. `emdash-release.yml` builds the bundle, signs its
+provenance and publishes the release to the EmDash plugin registry.
+`npm-publish.yml` runs the typecheck and tests, then publishes the package to
+npm with provenance. A release that asks for more permissions waits for
+approval in the [release dashboard](https://releases.emdashcms.com/publisher).
 
 ## Version bumps
 
