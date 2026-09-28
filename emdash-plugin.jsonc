@@ -20,7 +20,7 @@
 			"screenshots": [{ "file": "assets/screenshot-status.png" }, { "file": "assets/screenshot-editor.png" }]
 		}
 	},
-	"description": "Translate EmDash content, including SEO titles and descriptions, by hand or with DeepL, OpenAI or Cloudflare AI Gateway, and see which entries are missing, outdated or waiting for review.",
+	"description": "Translate EmDash content and SEO fields with DeepL, OpenAI or Cloudflare AI, and see which entries are missing, outdated or need review.",
 	"repo": "https://github.com/swissky/emdash-plugin-linguadash",
 
 	// Trust contract — what runtime APIs the plugin asks for.
