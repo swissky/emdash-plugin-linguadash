@@ -65,6 +65,8 @@ jobs:
 
       - name: "Publish plugin"
         uses: emdash-cms/emdash/apps/release-action@main # zizmor: ignore[unpinned-uses] -- configured by --action-ref
+        env:
+          GITHUB_REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}
         with:
           service-url: https://releases.emdashcms.com
           publisher-did: ${{ steps.prepare.outputs.publisher-did }}
