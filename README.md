@@ -2,12 +2,12 @@
 
 Multilingual content for [EmDash CMS](https://emdashcms.com). LinguaDash shows which entries
 are missing a language, which translations are outdated and which still need review. Editors
-translate by hand or draft translations with DeepL, OpenAI or Cloudflare AI Gateway, including
-SEO titles and descriptions.
+translate by hand or draft translations with DeepL, Google Cloud Translation, Azure Translator,
+OpenAI or Cloudflare AI Gateway, including SEO titles and descriptions.
 
 ## Requirements
 
-- EmDash 0.42 or later with a [plugin sandbox runner](https://docs.emdashcms.com/deployment/plugin-sandbox/).
+- EmDash 1.0 or later with a [plugin sandbox runner](https://docs.emdashcms.com/deployment/plugin-sandbox/).
 - [Astro i18n routing](https://docs.emdashcms.com/guides/internationalization) with every
   language you translate into listed in `i18n.locales`.
 - For machine translation, an `EMDASH_ENCRYPTION_KEY` so API keys are stored encrypted.
@@ -59,9 +59,20 @@ collection with translatable fields.
 
 ## Machine translation
 
-Pick **DeepL**, **OpenAI (GPT)** or **Cloudflare AI Gateway** under **Machine translation** in
-**Translation settings** and enter the matching credentials. DeepL Free keys ending in `:fx` use the Free
-API. Cloudflare needs the account ID and an API token with the **Account > Workers AI > Read**
+Pick a service under **Machine translation** in **Translation settings** and enter the matching
+credentials:
+
+- **DeepL.** Free keys ending in `:fx` use the Free API. LinguaDash asks for DeepL's
+  quality-optimized model where the language pair has it. Optionally enter up to five
+  [glossary](https://developers.deepl.com/docs/customize/glossaries-in-the-real-world)
+  IDs; each translation uses the glossaries that hold a dictionary for its language pair.
+- **Google Cloud Translation.** An API key from a Google Cloud project with the Cloud
+  Translation API enabled. Google covers many more languages than DeepL.
+- **Azure Translator.** The key of a Translator resource and, unless the resource is global,
+  its region (for example `westeurope`).
+- **OpenAI (GPT)** and **Cloudflare AI Gateway** translate with a language model.
+
+Cloudflare needs the account ID and an API token with the **Account > Workers AI > Read**
 permission. Requests go through the configured AI Gateway (`default` unless you change it), so
 gateway logging, caching and rate limits apply. The model can be a Workers AI model
 (`@cf/meta/llama-3.3-70b-instruct-fp8-fast` by default) or a third-party gateway model such as
@@ -71,12 +82,16 @@ rich-text fields translated. Marks, links and embedded blocks stay in place. Whi
 translation is an unpublished draft and its source changes, the panel offers **Retranslate**.
 Once the translation is published, machine translation no longer touches it, so reviewed work is
 never overwritten. Text is sent only to the provider
-you choose (`api.deepl.com`, `api-free.deepl.com`, `api.openai.com` or `api.cloudflare.com`).
+you choose (`api.deepl.com`, `api-free.deepl.com`, `translation.googleapis.com`,
+`api.cognitive.microsofttranslator.com`, `api.openai.com` or `api.cloudflare.com`).
 
-**Instructions for the translation** (optional, up to 1000 characters) are sent with every
-request, for example "Use Swiss spelling (ss instead of ß)" or "Keep product names in English".
-OpenAI and Cloudflare models receive them as instructions. DeepL receives them as `context`, which
-guides word choice but is not followed like a rule.
+**Tone** and **Instructions for the translation** (optional, up to 1000 characters) apply to
+DeepL and the language models; Google and Azure ignore them. Write instructions such as
+"Use Swiss spelling (ss instead of ß)" or "Keep product names in English", one per line.
+OpenAI and Cloudflare models receive them as instructions. DeepL receives them as `context`,
+and also as custom instructions, which it follows like rules, when the target language is
+German, English, Spanish, French, Italian, Japanese, Korean or Chinese and there are at most
+10 lines of up to 300 characters each.
 
 ## SEO per language
 

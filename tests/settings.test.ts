@@ -130,6 +130,22 @@ describe("settings page", () => {
 		expect(formFields(response)).toContainEqual(expect.objectContaining({ action_id: "provider", initial_value: "cloudflare" }));
 		expect(await host.inspect.setting("provider")).toBe("deepl");
 		expect(await host.inspect.setting("cloudflareAccountId")).toBe("");
+
+		const glossaries = await host.admin.submit(
+			"/translations",
+			"save",
+			{ ...deeplForm, deeplGlossaryIds: "not-a-glossary" },
+			{ user: admin },
+		);
+		expect(texts(glossaries)).toContain("Enter up to 5 DeepL glossary IDs, separated by commas.");
+		const region = await host.admin.submit(
+			"/translations",
+			"save",
+			{ provider: "azure", azureRegion: "west europe" },
+			{ user: admin },
+		);
+		expect(texts(region)).toContain("The Azure region may only contain letters, digits and -.");
+		expect(await host.inspect.setting("provider")).toBe("deepl");
 	});
 
 	it("explains a missing encryption key instead of saving the provider without its key", async () => {

@@ -5,7 +5,15 @@ import { createPluginRuntimeTestHost, type PluginRuntimeTestHost } from "@emdash
 
 import type { PluginContext } from "emdash/plugin";
 
-import { applyTranslations, collectSegments, deeplTargetLang, translateSegments } from "../src/translate.js";
+import {
+	applyTranslations,
+	azureLang,
+	collectSegments,
+	deeplCustomInstructions,
+	deeplTargetLang,
+	googleLang,
+	translateSegments,
+} from "../src/translate.js";
 
 const body = [
 	{
@@ -75,6 +83,125 @@ describe("segments for machine translation", () => {
 
 	it("maps locales to DeepL target codes", () => {
 		expect(["fr", "en", "pt", "de-ch", "pt_br"].map(deeplTargetLang)).toEqual(["FR", "EN-GB", "PT-PT", "DE-CH", "PT-BR"]);
+	});
+
+	it("maps locales to Google and Azure codes", () => {
+		const locales = ["fr", "zh", "zh-hant", "pt-br", "pt-pt", "fr-ca", "nb", "de-ch"];
+		expect(locales.map(googleLang)).toEqual(["fr", "zh-CN", "zh-TW", "pt", "pt-PT", "fr-CA", "no", "de"]);
+		expect(locales.map(azureLang)).toEqual(["fr", "zh-Hans", "zh-Hant", "pt", "pt-pt", "fr-ca", "nb", "de"]);
+	});
+
+	it("sends DeepL one custom instruction per line only where DeepL supports them", () => {
+		const instructions = "Keep the brand name Seeblick.\n\n  Use Swiss spelling.  ";
+		expect(deeplCustomInstructions(instructions, "fr-ch")).toEqual(["Keep the brand name Seeblick.", "Use Swiss spelling."]);
+		expect(deeplCustomInstructions(instructions, "nl")).toBeNull();
+		expect(deeplCustomInstructions("x".repeat(301), "fr")).toBeNull();
+		expect(deeplCustomInstructions(Array.from({ length: 11 }, (_, i) => `Rule ${i}`).join("\n"), "fr")).toBeNull();
+	});
+});
+
+describe("translation services", () => {
+	const glossaryFr = "11111111-1111-4111-8111-111111111111";
+	const glossaryIt = "22222222-2222-4222-8222-222222222222";
+
+	beforeEach(async () => {
+		process.env.EMDASH_ENCRYPTION_KEY = `emdash_enc_v1_${Buffer.alloc(32, 7).toString("base64url")}`;
+		host = await createPluginRuntimeTestHost({
+			site: { locale: "de" },
+			i18n: { defaultLocale: "de", locales: ["de", "fr"] },
+		});
+		await host.fixtures.collection({
+			slug: "posts",
+			label: "Posts",
+			fields: [
+				{ slug: "title", label: "Title", type: "string", translatable: true },
+				{ slug: "body", label: "Body", type: "portableText", translatable: true },
+			],
+		});
+	});
+
+	afterEach(async () => {
+		await host.dispose();
+	});
+
+	async function translate(settings: Record<string, string>) {
+		await host.actions.plugin.updateSettings({ targetLocales: "fr", ...settings });
+		const source = await host.fixtures.content("posts", { slug: "hallo", locale: "de", data: { title: "Hallo Freund", body } });
+		const done = await host.admin.actEditorPanel("translations", "posts", source.id, "machine", { value: "fr" });
+		const fr = (await host.inspect.content.list("posts")).find((row) => row.locale === "fr");
+		const requestBody = (index: number) => JSON.parse(new TextDecoder().decode(host.http.requests()[index]!.body));
+		return { done, fr, requests: host.http.requests(), requestBody };
+	}
+
+	it("sends DeepL custom instructions, the quality model and only the glossaries for this language pair", async () => {
+		const glossary = (source: string, target: string) =>
+			Response.json({ dictionaries: [{ source_lang: source, target_lang: target, entry_count: 1 }] });
+		await host.http.respond(`https://api-free.deepl.com/v3/glossaries/${glossaryFr}`, glossary("de", "fr"));
+		await host.http.respond(`https://api-free.deepl.com/v3/glossaries/${glossaryIt}`, glossary("de", "it"));
+		await host.http.respond(
+			"https://api-free.deepl.com/v2/translate",
+			deeplResponse(["Salut l’ami", 'Bonjour <s i="1">monde</s>']),
+		);
+
+		const { done, requests, requestBody } = await translate({
+			provider: "deepl",
+			deeplApiKey: "secret-key:fx",
+			deeplGlossaryIds: `${glossaryFr}, ${glossaryIt}`,
+			instructions: "Keep the brand name Seeblick.\nUse Swiss spelling.",
+		});
+		expect(done.toast?.type).toBe("success");
+		const translateRequest = requests.findIndex((r) => r.url.endsWith("/v2/translate"));
+		expect(requestBody(translateRequest)).toMatchObject({
+			model_type: "prefer_quality_optimized",
+			context: "Keep the brand name Seeblick.\nUse Swiss spelling.",
+			custom_instructions: ["Keep the brand name Seeblick.", "Use Swiss spelling."],
+			glossary_ids: [glossaryFr],
+		});
+	});
+
+	it("translates through Google Cloud Translation and decodes its HTML entities", async () => {
+		await host.http.respond(
+			"https://translation.googleapis.com/language/translate/v2",
+			Response.json({
+				data: { translations: [{ translatedText: "Salut l&#39;ami" }, { translatedText: 'Bonjour <s i="1">monde</s>' }] },
+			}),
+		);
+
+		const { done, fr, requests, requestBody } = await translate({ provider: "google", googleApiKey: "google-key" });
+		expect(done.toast?.type).toBe("success");
+		expect(requests[0]!.headers["x-goog-api-key"]).toBe("google-key");
+		expect(requestBody(0)).toEqual({
+			q: ["Hallo Freund", 'Hallo <s i="1">Welt</s>'],
+			source: "de",
+			target: "fr",
+			format: "html",
+		});
+		expect(fr?.data.title).toBe("Salut l'ami");
+		expect((fr?.data.body as typeof body)[0]!.children!.map((c) => (c as { text: string }).text)).toEqual([
+			"Bonjour ",
+			"monde",
+		]);
+	});
+
+	it("translates through Azure Translator with the resource region", async () => {
+		await host.http.respond(
+			"https://api.cognitive.microsofttranslator.com/translate?api-version=3.0&from=de&to=fr&textType=html",
+			Response.json([
+				{ translations: [{ text: "Salut l’ami", to: "fr" }] },
+				{ translations: [{ text: 'Bonjour <s i="1">monde</s>', to: "fr" }] },
+			]),
+		);
+
+		const { done, fr, requests, requestBody } = await translate({
+			provider: "azure",
+			azureApiKey: "azure-key",
+			azureRegion: "switzerlandnorth",
+		});
+		expect(done.toast?.type).toBe("success");
+		expect(requests[0]!.headers["ocp-apim-subscription-key"]).toBe("azure-key");
+		expect(requests[0]!.headers["ocp-apim-subscription-region"]).toBe("switzerlandnorth");
+		expect(requestBody(0)).toEqual([{ Text: "Hallo Freund" }, { Text: 'Hallo <s i="1">Welt</s>' }]);
+		expect(fr?.data.title).toBe("Salut l’ami");
 	});
 });
 

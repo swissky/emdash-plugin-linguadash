@@ -5,8 +5,12 @@ import type { Ui } from "./i18n.js";
 import { parseLocales, resolveSourceLocale, resolveTargetLocales, translatableFields } from "./panel.js";
 import {
 	ACCOUNT_ID,
+	AZURE_REGION,
 	DEFAULT_CLOUDFLARE_MODEL,
 	GATEWAY_ID,
+	GLOSSARY_ID,
+	MAX_GLOSSARIES,
+	parseGlossaryIds,
 	PROVIDER_NAMES,
 	ProviderError,
 	readProviderConfig,
@@ -18,8 +22,8 @@ import {
 export const ADMIN_ROLE = 50;
 
 const LOCALE = /^[a-z]{2,3}(?:[-_][a-z0-9]{2,8})*$/i;
-const SECRET_KEYS = ["deeplApiKey", "openaiApiKey", "cloudflareApiToken"] as const;
-const PROVIDERS = ["none", "deepl", "openai", "cloudflare"] as const;
+const SECRET_KEYS = ["deeplApiKey", "googleApiKey", "azureApiKey", "openaiApiKey", "cloudflareApiToken"] as const;
+const PROVIDERS = ["none", "deepl", "google", "azure", "openai", "cloudflare"] as const;
 /** Sent with every request, so it costs tokens on each translation. */
 const MAX_INSTRUCTIONS = 1000;
 /** Codes offered when adding a language; a saved code outside this list still shows and can be removed. */
@@ -84,9 +88,11 @@ export async function settingsBlocks(
 		const typed = rejected?.values[key];
 		return typeof typed === "string" ? typed : text(ctx, key);
 	};
-	const [formality, instructions, openaiModel, accountId, gatewayId, cloudflareModel] = await Promise.all([
+	const [formality, instructions, glossaryIds, azureRegion, openaiModel, accountId, gatewayId, cloudflareModel] = await Promise.all([
 		value("formality"),
 		value("instructions"),
+		value("deeplGlossaryIds"),
+		value("azureRegion"),
 		value("openaiModel"),
 		value("cloudflareAccountId"),
 		value("cloudflareGatewayId"),
@@ -150,6 +156,8 @@ export async function settingsBlocks(
 					options: [
 						{ value: "none", label: m.providerOff },
 						{ value: "deepl", label: PROVIDER_NAMES.deepl },
+						{ value: "google", label: PROVIDER_NAMES.google },
+						{ value: "azure", label: PROVIDER_NAMES.azure },
 						{ value: "openai", label: PROVIDER_NAMES.openai },
 						{ value: "cloudflare", label: PROVIDER_NAMES.cloudflare },
 					],
@@ -161,6 +169,36 @@ export async function settingsBlocks(
 					label: m.deeplKey,
 					has_value: saved.deeplApiKey,
 					condition: only("deepl"),
+				},
+				{
+					type: "text_input",
+					action_id: "deeplGlossaryIds",
+					label: m.deeplGlossaries,
+					placeholder: m.deeplGlossariesPlaceholder,
+					initial_value: glossaryIds,
+					condition: only("deepl"),
+				},
+				{
+					type: "secret_input",
+					action_id: "googleApiKey",
+					label: m.googleKey,
+					has_value: saved.googleApiKey,
+					condition: only("google"),
+				},
+				{
+					type: "secret_input",
+					action_id: "azureApiKey",
+					label: m.azureKey,
+					has_value: saved.azureApiKey,
+					condition: only("azure"),
+				},
+				{
+					type: "text_input",
+					action_id: "azureRegion",
+					label: m.azureRegion,
+					placeholder: m.azureRegionPlaceholder,
+					initial_value: azureRegion,
+					condition: only("azure"),
 				},
 				{
 					type: "secret_input",
@@ -271,6 +309,12 @@ export async function saveSettings(ctx: PluginContext, values: Record<string, un
 	if (accountId && !ACCOUNT_ID.test(accountId)) return m.badAccount;
 	const gatewayId = read("cloudflareGatewayId");
 	if (gatewayId && !GATEWAY_ID.test(gatewayId)) return m.badGateway;
+	const glossaryIds = parseGlossaryIds(read("deeplGlossaryIds"));
+	if (glossaryIds.length > MAX_GLOSSARIES || !glossaryIds.every((id) => GLOSSARY_ID.test(id))) {
+		return m.badGlossaries(MAX_GLOSSARIES);
+	}
+	const azureRegion = read("azureRegion").toLowerCase();
+	if (azureRegion && !AZURE_REGION.test(azureRegion)) return m.badRegion;
 	const formality = read("formality");
 	const instructions = read("instructions");
 	if (instructions.length > MAX_INSTRUCTIONS) return m.instructionsTooLong(MAX_INSTRUCTIONS);
@@ -279,6 +323,8 @@ export async function saveSettings(ctx: PluginContext, values: Record<string, un
 		provider,
 		formality: formality === "more" || formality === "less" ? formality : "default",
 		instructions,
+		deeplGlossaryIds: glossaryIds.join(", "),
+		azureRegion,
 		openaiModel: read("openaiModel"),
 		cloudflareAccountId: accountId,
 		cloudflareGatewayId: gatewayId,

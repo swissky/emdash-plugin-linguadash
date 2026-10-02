@@ -14,20 +14,27 @@
 		"installation": { "file": "registry/installation.md" }
 	},
 	"release": {
-		"requires": { "env:emdash": ">=0.42.0" },
+		"requires": { "env:emdash": ">=1.0.0" },
 		"artifacts": {
 			"icon": { "file": "icon.png" },
 			"screenshots": [{ "file": "assets/screenshot-status.png" }, { "file": "assets/screenshot-editor.png" }]
 		}
 	},
-	"description": "Translate EmDash content and SEO fields with DeepL, OpenAI or Cloudflare AI, and see which entries are missing, outdated or need review.",
+	"description": "Translate EmDash content and SEO fields with DeepL, Google, Azure or AI models, and see which entries are missing, outdated or need review.",
 	"repo": "https://github.com/swissky/emdash-plugin-linguadash",
 
 	// Trust contract — what runtime APIs the plugin asks for.
 	// Changing these between releases requires a version bump because
 	// installed users have consented to the old contract.
 	"capabilities": ["content:write", "content:revisions:read", "schema:read", "network:request"],
-	"allowedHosts": ["api.deepl.com", "api-free.deepl.com", "api.openai.com", "api.cloudflare.com"],
+	"allowedHosts": [
+		"api.deepl.com",
+		"api-free.deepl.com",
+		"translation.googleapis.com",
+		"api.cognitive.microsofttranslator.com",
+		"api.openai.com",
+		"api.cloudflare.com"
+	],
 	"storage": {
 		"status": { "indexes": ["collection", "targetLocale", "state", "sourceId", "outdated", ["state", "outdated"]] }
 	},
@@ -47,6 +54,8 @@
 				"options": [
 					{ "value": "none", "label": "Off" },
 					{ "value": "deepl", "label": "DeepL" },
+					{ "value": "google", "label": "Google Cloud Translation" },
+					{ "value": "azure", "label": "Azure Translator" },
 					{ "value": "openai", "label": "OpenAI (GPT)" },
 					{ "value": "cloudflare", "label": "Cloudflare AI Gateway" }
 				],
@@ -56,6 +65,22 @@
 				"type": "secret",
 				"label": "DeepL API key",
 				"description": "Free keys end in :fx and use the DeepL Free API."
+			},
+			"deeplGlossaryIds": {
+				"type": "string",
+				"label": "DeepL glossary IDs",
+				"description": "Up to 5 glossary IDs, separated by commas. Each translation uses the glossaries that have a dictionary for its language pair."
+			},
+			"googleApiKey": {
+				"type": "secret",
+				"label": "Google Cloud API key",
+				"description": "A key for a Google Cloud project with the Cloud Translation API enabled."
+			},
+			"azureApiKey": { "type": "secret", "label": "Azure Translator key" },
+			"azureRegion": {
+				"type": "string",
+				"label": "Azure region",
+				"description": "The region of the Translator resource, such as westeurope. Leave empty for a global resource."
 			},
 			"openaiApiKey": { "type": "secret", "label": "OpenAI API key" },
 			"openaiModel": { "type": "string", "label": "OpenAI model", "default": "gpt-4.1-mini" },
@@ -94,7 +119,7 @@
 			"instructions": {
 				"type": "string",
 				"label": "Instructions for the translation",
-				"description": "Optional guidance sent with every machine translation, such as spelling conventions or terms to keep untranslated."
+				"description": "Optional guidance for DeepL and AI models, such as spelling conventions or terms to keep untranslated. For DeepL, write one instruction per line."
 			}
 		},
 		"editorPanels": [

@@ -1,6 +1,6 @@
 {
 	"name": "emdash-plugin-linguadash",
-	"version": "0.1.1",
+	"version": "0.2.0",
 	"type": "module",
 	"packageManager": "pnpm@11.20.0",
 	"keywords": [
@@ -39,7 +39,7 @@
 	},
 	"peerDependencies": {
 		"astro": ">=6.0.0",
-		"emdash": ">=0.42.0"
+		"emdash": ">=1.0.0"
 	},
 	"peerDependenciesMeta": {
 		"astro": {
@@ -47,14 +47,14 @@
 		}
 	},
 	"devDependencies": {
-		"@emdash-cms/blocks": "0.42.0",
-		"@emdash-cms/plugin-cli": "0.13.0",
-		"@emdash-cms/plugin-test": "^0.2.5",
-		"emdash": "0.42.0",
+		"@emdash-cms/blocks": "1.1.0",
+		"@emdash-cms/plugin-cli": "0.13.2",
+		"@emdash-cms/plugin-test": "^0.2.7",
+		"emdash": "1.1.0",
 		"typescript": "^5.9.0",
 		"vitest": "^4.1.0"
 	},
-	"description": "Translate EmDash content and SEO fields with DeepL, OpenAI or Cloudflare AI, and see which entries are missing, outdated or need review.",
+	"description": "Translate EmDash content and SEO fields with DeepL, Google, Azure or AI models, and see which entries are missing, outdated or need review.",
 	"license": "MIT",
 	"author": {
 		"name": "Kevin Kyburz",
