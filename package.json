@@ -1,6 +1,6 @@
 {
 	"name": "emdash-plugin-linguadash",
-	"version": "0.2.0",
+	"version": "0.2.1",
 	"type": "module",
 	"packageManager": "pnpm@11.20.0",
 	"keywords": [
@@ -47,10 +47,10 @@
 		}
 	},
 	"devDependencies": {
-		"@emdash-cms/blocks": "1.1.0",
-		"@emdash-cms/plugin-cli": "0.13.2",
-		"@emdash-cms/plugin-test": "^0.2.7",
-		"emdash": "1.1.0",
+		"@emdash-cms/blocks": "1.2.0",
+		"@emdash-cms/plugin-cli": "0.13.3",
+		"@emdash-cms/plugin-test": "^0.2.8",
+		"emdash": "1.2.0",
 		"typescript": "^5.9.0",
 		"vitest": "^4.1.0"
 	},

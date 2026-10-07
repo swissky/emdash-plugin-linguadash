@@ -55,7 +55,7 @@ jobs:
           EMDASH_RELEASE_SELECTOR: ${{ inputs.package || github.ref_name }}
         run: |
           set -euo pipefail
-          pnpm dlx @emdash-cms/plugin-cli@0.13.0 release prepare "${EMDASH_RELEASE_SELECTOR}" --dir . --out-dir .emdash-release
+          pnpm dlx @emdash-cms/plugin-cli@0.13.3 release prepare "${EMDASH_RELEASE_SELECTOR}" --dir . --out-dir .emdash-release
 
       - name: "Create build provenance"
         id: attest
