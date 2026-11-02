@@ -14,6 +14,8 @@ import {
 	PROVIDER_NAMES,
 	ProviderError,
 	readProviderConfig,
+	readSetting,
+	readSettings,
 	translateSegments,
 	type Provider,
 } from "./translate.js";
@@ -35,13 +37,8 @@ const LANGUAGES = (
 
 type Choice = (typeof PROVIDERS)[number];
 
-async function text(ctx: PluginContext, key: string): Promise<string> {
-	const value = await ctx.settings.get<string>(key);
-	return typeof value === "string" ? value : "";
-}
-
 async function selectedProvider(ctx: PluginContext): Promise<Choice> {
-	const value = await text(ctx, "provider");
+	const value = await readSetting(ctx, "provider");
 	return (PROVIDERS as readonly string[]).includes(value) ? (value as Choice) : "none";
 }
 
@@ -59,6 +56,7 @@ export async function setupStatus(ctx: PluginContext) {
 		targetLocales,
 		provider,
 		providerReady: provider !== "none" && config !== null,
+		collections,
 		translatableCollections: collections.filter((c) => translatableFields(c).length > 0).map((c) => c.label || c.slug),
 	};
 }
@@ -86,7 +84,7 @@ export async function settingsBlocks(
 	const { m } = ui;
 	const value = (key: string) => {
 		const typed = rejected?.values[key];
-		return typeof typed === "string" ? typed : text(ctx, key);
+		return typeof typed === "string" ? typed : readSetting(ctx, key);
 	};
 	const [formality, instructions, glossaryIds, azureRegion, openaiModel, accountId, gatewayId, cloudflareModel] = await Promise.all([
 		value("formality"),
@@ -105,7 +103,7 @@ export async function settingsBlocks(
 	const typedProvider = rejected?.values.provider;
 	const provider = (PROVIDERS as readonly unknown[]).includes(typedProvider) ? (typedProvider as Choice) : status.provider;
 	const saved = Object.fromEntries(
-		await Promise.all(SECRET_KEYS.map(async (key) => [key, (await text(ctx, key)) !== ""] as const)),
+		await Promise.all(SECRET_KEYS.map(async (key) => [key, (await readSetting(ctx, key)) !== ""] as const)),
 	) as Record<(typeof SECRET_KEYS)[number], boolean>;
 	const only = (provider: Provider) => ({ field: "provider", eq: provider });
 
@@ -294,9 +292,11 @@ export async function settingsBlocks(
 export async function changeLocale(ctx: PluginContext, action: "add" | "remove", code: string, { m }: Ui) {
 	const locale = code.trim().toLowerCase();
 	if (!LOCALE.test(locale)) return m.invalidLocale(code);
-	const current = parseLocales(await ctx.settings.get<string>("targetLocales"));
+	const stored = await readSettings(ctx);
+	const current = parseLocales(stored.get("targetLocales"));
 	const next = action === "add" ? [...new Set([...current, locale])] : current.filter((c) => c !== locale);
 	await ctx.settings.set("targetLocales", next.join(", "));
+	stored.set("targetLocales", next.join(", "));
 	return null;
 }
 
@@ -332,18 +332,33 @@ export async function saveSettings(ctx: PluginContext, values: Record<string, un
 	};
 	// An untouched secret field is omitted and a cleared one is empty; neither replaces the stored key.
 	// Secrets go first so a missing encryption key rejects the whole submission.
+	// Only changed values are written, so a save stays within the sandbox's host call budget.
+	const stored = await readSettings(ctx);
+	const changed = (key: string, value: string) => (stored.get(key) ?? "") !== value;
+	const write = async (key: string, value: string) => {
+		if (!changed(key, value)) return;
+		await ctx.settings.set(key, value);
+		stored.set(key, value);
+	};
 	try {
-		await Promise.all(SECRET_KEYS.map((key) => (read(key) ? ctx.settings.set(key, read(key)) : undefined)));
+		await Promise.all(SECRET_KEYS.map((key) => (read(key) ? write(key, read(key)) : undefined)));
 	} catch (error) {
 		if (error instanceof Error && error.message.includes("EMDASH_ENCRYPTION_KEY")) return m.needsEncryptionKey;
 		throw error;
 	}
-	await Promise.all(Object.entries(plain).map(([key, value]) => ctx.settings.set(key, value)));
+	await Promise.all(Object.entries(plain).map(([key, value]) => write(key, value)));
 	return null;
 }
 
 export async function forgetKeys(ctx: PluginContext): Promise<void> {
-	await Promise.all(SECRET_KEYS.map((key) => ctx.settings.delete(key)));
+	const stored = await readSettings(ctx);
+	await Promise.all(
+		SECRET_KEYS.map(async (key) => {
+			if (!stored.has(key)) return;
+			await ctx.settings.delete(key);
+			stored.delete(key);
+		}),
+	);
 }
 
 /** Translates a short sample with the saved provider, so setup problems surface before real content. */

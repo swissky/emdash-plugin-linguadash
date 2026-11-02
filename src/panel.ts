@@ -8,6 +8,7 @@ import {
 	collectSegments,
 	ProviderError,
 	readProviderConfig,
+	readSettings,
 	type SeoText,
 	translateSegments,
 } from "./translate.js";
@@ -63,7 +64,8 @@ export async function resolveSourceLocale(ctx: PluginContext): Promise<string> {
 }
 
 export async function resolveTargetLocales(ctx: PluginContext, sourceLocale: string): Promise<string[]> {
-	return parseLocales(await ctx.settings.get<string>("targetLocales")).filter((locale) => locale !== sourceLocale);
+	const settings = await readSettings(ctx);
+	return parseLocales(settings.get("targetLocales")).filter((locale) => locale !== sourceLocale);
 }
 
 export function translatableFields(schema: { fields: { slug: string; translatable?: boolean }[] } | null | undefined) {
@@ -252,6 +254,20 @@ async function createTranslation(ctx: PluginContext, state: State, entry: Entry,
 		updatedAt: new Date().toISOString(),
 	};
 	await ctx.storage.status!.put(statusId(entry.collection, created.id), status);
+	remember(state, entry, created, locale, status);
+}
+
+/** Records a written translation in `state`, so it can be rendered again without reloading. */
+function remember(
+	state: State,
+	entry: Entry,
+	saved: { id: string; slug: string | null; status: string; updatedAt: string },
+	locale: string,
+	status: TranslationStatus,
+) {
+	const { id, slug, updatedAt } = saved;
+	state.byLocale.set(locale, { id, locale, slug, status: saved.status, updatedAt });
+	state.statuses.set(statusId(entry.collection, saved.id), status);
 }
 
 async function machineTranslate(ctx: PluginContext, state: State, entry: Entry, locale: string) {
@@ -278,6 +294,7 @@ async function machineTranslate(ctx: PluginContext, state: State, entry: Entry, 
 		updatedAt: new Date().toISOString(),
 	};
 	await ctx.storage.status!.put(statusId(entry.collection, saved.id), status);
+	remember(state, entry, saved, locale, status);
 }
 
 async function markTranslated(ctx: PluginContext, state: State, entry: Entry, locale: string) {
@@ -348,7 +365,7 @@ export async function handlePanel(
 	const entry = ui.entry;
 	const text = uiFor(ui.locale);
 	const { m } = text;
-	let state = await loadState(ctx, entry);
+	const state = await loadState(ctx, entry);
 	const request = readAction(input);
 	if (!request) return { blocks: render(state, entry, text) };
 
@@ -357,7 +374,6 @@ export async function handlePanel(
 	try {
 		if (action === "create" && !exists && state.source && state.targetLocales.includes(locale)) {
 			await createTranslation(ctx, state, entry, locale);
-			state = await loadState(ctx, entry);
 			return {
 				blocks: render(state, entry, text),
 				toast: { type: "success", message: m.created(text.language(locale)) },
@@ -365,7 +381,6 @@ export async function handlePanel(
 		}
 		if (action === "machine" && canMachineTranslate(state, entry.collection, locale)) {
 			await machineTranslate(ctx, state, entry, locale);
-			state = await loadState(ctx, entry);
 			return {
 				blocks: render(state, entry, text),
 				toast: { type: "success", message: m.machineDone(text.language(locale)) },

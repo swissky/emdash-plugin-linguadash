@@ -268,16 +268,16 @@ async function overview(
 	}
 	const { sourceLocale, targetLocales } = status;
 	const statuses = ctx.storage.status!;
-	const [outdatedCount, storedPendingCount, outdated, pending] = await Promise.all([
-		statuses.count({ outdated: true }),
-		statuses.count({ state: { in: ["copied", "machine"] }, outdated: false }),
-		statuses.query({ where: { outdated: true }, limit: LIST_LIMIT }),
-		statuses.query({
-			where: { state: { in: ["copied", "machine"] }, outdated: false },
-			limit: LIST_LIMIT,
-		}),
+	// Counts only when a list is cut off: each storage call uses up the sandbox's host call budget.
+	const listed = async (where: Parameters<typeof statuses.count>[0] & object) => {
+		const page = await statuses.query({ where, limit: LIST_LIMIT });
+		return [page.hasMore ? await statuses.count(where) : page.items.length, page] as const;
+	};
+	const [[outdatedCount, outdated], [storedPendingCount, pending]] = await Promise.all([
+		listed({ outdated: true }),
+		listed({ state: { in: ["copied", "machine"] }, outdated: false }),
 	]);
-	const schemas = (await ctx.schema?.listCollections()) ?? [];
+	const schemas = status.collections;
 	const translateLabel =
 		status.providerReady && status.provider !== "none"
 			? m.translateWith(PROVIDER_NAMES[status.provider])
@@ -361,16 +361,29 @@ export async function translateMissing(ctx: PluginContext, ui: Ui, value: unknow
 	return { type: "success", message: machine ? ui.m.machineDone(language) : ui.m.created(language) };
 }
 
+/**
+ * The settings tab on its own, returned after a settings action. It skips the content scan,
+ * because the action's writes already use part of the sandbox's host call budget.
+ */
+export async function renderSettings(ctx: PluginContext, ui: Ui, rejected?: RejectedForm): Promise<BlockResponse> {
+	const status = await setupStatus(ctx);
+	const back: Block = {
+		type: "actions",
+		elements: [{ type: "button", action_id: "open-overview", label: ui.m.backToOverview, value: "overview" }],
+	};
+	return { blocks: [back, ...(await settingsBlocks(ctx, ui, status, rejected))] };
+}
+
 /** The Translations page: one tab per kind of open work, plus a settings tab for administrators. */
 export async function renderPage(
 	ctx: PluginContext,
 	ui: Ui,
-	options: { admin: boolean; tab?: "overview" | "settings"; rejected?: RejectedForm },
+	options: { admin: boolean; tab?: "overview" | "settings" },
 ): Promise<BlockResponse> {
 	const status = await setupStatus(ctx);
 	const { intro, panels, first } = await overview(ctx, ui, status, options.admin);
 	if (options.admin) {
-		panels.push({ label: ui.m.tabSettings, blocks: await settingsBlocks(ctx, ui, status, options.rejected) });
+		panels.push({ label: ui.m.tabSettings, blocks: await settingsBlocks(ctx, ui, status) });
 	}
 	if (panels.length === 1) return { blocks: [...intro, ...panels[0]!.blocks] };
 	const settingsTab = options.admin && options.tab === "settings";

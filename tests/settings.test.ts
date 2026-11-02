@@ -129,7 +129,7 @@ describe("settings page", () => {
 		);
 		expect(formFields(response)).toContainEqual(expect.objectContaining({ action_id: "provider", initial_value: "cloudflare" }));
 		expect(await host.inspect.setting("provider")).toBe("deepl");
-		expect(await host.inspect.setting("cloudflareAccountId")).toBe("");
+		expect((await host.inspect.setting("cloudflareAccountId")) ?? "").toBe("");
 
 		const glossaries = await host.admin.submit(
 			"/translations",

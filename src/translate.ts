@@ -49,39 +49,64 @@ export function parseGlossaryIds(value: string): string[] {
 	return value.split(/[\s,]+/).filter(Boolean);
 }
 
+const snapshots = new WeakMap<PluginContext, Promise<Map<string, unknown>>>();
+
+/**
+ * All of the plugin's settings, read with one host call and shared for the rest of the
+ * invocation. The sandbox allows only a few host calls per invocation, so reading each
+ * setting on its own would exhaust it. Code that writes a setting updates the returned map too.
+ */
+export function readSettings(ctx: PluginContext): Promise<Map<string, unknown>> {
+	let snapshot = snapshots.get(ctx);
+	if (!snapshot) {
+		snapshot = ctx.settings.list().then((entries) => new Map(entries.map(({ key, value }) => [key, value])));
+		snapshot.catch(() => snapshots.delete(ctx));
+		snapshots.set(ctx, snapshot);
+	}
+	return snapshot;
+}
+
+/** A string setting, or "" when it is unset or not a string. */
+export async function readSetting(ctx: PluginContext, key: string): Promise<string> {
+	const value = (await readSettings(ctx)).get(key);
+	return typeof value === "string" ? value : "";
+}
+
 export async function readProviderConfig(ctx: PluginContext): Promise<ProviderConfig | null> {
-	const setting = async (key: string) => ((await ctx.settings.get<string>(key)) ?? "").trim();
-	const [provider, formality, instructions] = await Promise.all([
-		setting("provider"),
-		setting("formality"),
-		setting("instructions"),
-	]);
+	const settings = await readSettings(ctx);
+	const setting = (key: string) => {
+		const value = settings.get(key);
+		return typeof value === "string" ? value.trim() : "";
+	};
+	const provider = setting("provider");
+	const formality = setting("formality");
+	const instructions = setting("instructions");
 	const tone = formality === "more" || formality === "less" ? formality : "default";
 	switch (provider) {
 		case "deepl": {
-			const [apiKey, glossaries] = await Promise.all([setting("deeplApiKey"), setting("deeplGlossaryIds")]);
-			const glossaryIds = parseGlossaryIds(glossaries);
+			const apiKey = setting("deeplApiKey");
+			const glossaryIds = parseGlossaryIds(setting("deeplGlossaryIds"));
 			return apiKey ? { provider, apiKey, model: "", formality: tone, instructions, glossaryIds } : null;
 		}
 		case "google": {
-			const apiKey = await setting("googleApiKey");
+			const apiKey = setting("googleApiKey");
 			return apiKey ? { provider, apiKey, model: "", formality: tone, instructions } : null;
 		}
 		case "azure": {
-			const [apiKey, region] = await Promise.all([setting("azureApiKey"), setting("azureRegion")]);
+			const apiKey = setting("azureApiKey");
+			const region = setting("azureRegion");
 			return apiKey ? { provider, apiKey, model: "", formality: tone, instructions, region } : null;
 		}
 		case "openai": {
-			const [apiKey, model] = await Promise.all([setting("openaiApiKey"), setting("openaiModel")]);
+			const apiKey = setting("openaiApiKey");
+			const model = setting("openaiModel");
 			return apiKey ? { provider, apiKey, model: model || "gpt-4.1-mini", formality: tone, instructions } : null;
 		}
 		case "cloudflare": {
-			const [apiKey, accountId, gatewayId, model] = await Promise.all([
-				setting("cloudflareApiToken"),
-				setting("cloudflareAccountId"),
-				setting("cloudflareGatewayId"),
-				setting("cloudflareModel"),
-			]);
+			const apiKey = setting("cloudflareApiToken");
+			const accountId = setting("cloudflareAccountId");
+			const gatewayId = setting("cloudflareGatewayId");
+			const model = setting("cloudflareModel");
 			if (!apiKey || !accountId) return null;
 			return {
 				provider,

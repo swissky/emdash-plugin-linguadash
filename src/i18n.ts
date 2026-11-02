@@ -4,6 +4,7 @@ const en = {
 	tabOverview: "Status",
 	tabSettings: "Settings",
 	openSettings: "Open settings",
+	backToOverview: "Back to overview",
 
 	setupTitle: "Set up translations",
 	setupIntro:
@@ -128,6 +129,7 @@ const de: Messages = {
 	tabOverview: "Status",
 	tabSettings: "Einstellungen",
 	openSettings: "Einstellungen öffnen",
+	backToOverview: "Zurück zur Übersicht",
 
 	setupTitle: "Übersetzungen einrichten",
 	setupIntro:
@@ -250,6 +252,7 @@ const fr: Messages = {
 	tabOverview: "État",
 	tabSettings: "Paramètres",
 	openSettings: "Ouvrir les paramètres",
+	backToOverview: "Retour à l'aperçu",
 
 	setupTitle: "Configurer les traductions",
 	setupIntro:
@@ -372,6 +375,7 @@ const es: Messages = {
 	tabOverview: "Estado",
 	tabSettings: "Ajustes",
 	openSettings: "Abrir ajustes",
+	backToOverview: "Volver al resumen",
 
 	setupTitle: "Configurar traducciones",
 	setupIntro:

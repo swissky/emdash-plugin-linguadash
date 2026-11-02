@@ -7,6 +7,7 @@ import { ADMIN_ROLE, changeLocale, forgetKeys, saveSettings, testTranslation } f
 import {
 	forgetDeleted,
 	renderPage,
+	renderSettings,
 	trackPublish,
 	trackSave,
 	TRANSLATE_ACTION,
@@ -30,11 +31,11 @@ async function handleAdmin(interaction: BlockInteraction, role: number, ui: Ui, 
 	let toast: NonNullable<BlockResponse["toast"]>;
 	if (interaction.type === "form_submit" && interaction.action_id === "save") {
 		const error = await saveSettings(ctx, interaction.values, ui);
-		if (error) return renderPage(ctx, ui, { admin, tab: "settings", rejected: { error, values: interaction.values } });
+		if (error) return renderSettings(ctx, ui, { error, values: interaction.values });
 		toast = { message: ui.m.saved, type: "success" };
 	} else if (interaction.type === "block_action" && (interaction.action_id === "add-locale" || interaction.action_id === "remove-locale")) {
 		const code = typeof interaction.value === "string" ? interaction.value : "";
-		if (!code) return renderPage(ctx, ui, { admin, tab: "settings" });
+		if (!code) return renderSettings(ctx, ui);
 		const adding = interaction.action_id === "add-locale";
 		const error = await changeLocale(ctx, adding ? "add" : "remove", code, ui);
 		const language = ui.language(code);
@@ -48,7 +49,7 @@ async function handleAdmin(interaction: BlockInteraction, role: number, ui: Ui, 
 		const result = await testTranslation(ctx, ui);
 		toast = { message: result.message, type: result.ok ? "success" : "error" };
 	}
-	return { ...(await renderPage(ctx, ui, { admin, tab: "settings" })), toast };
+	return { ...(await renderSettings(ctx, ui)), toast };
 }
 
 const plugin: SandboxedPlugin = {
